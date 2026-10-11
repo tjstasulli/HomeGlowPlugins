@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Waffle Give</title>
+  <link rel="stylesheet" href="/index.css">
+
+  <script type="application/json" id="homeglow-manifest">
+  {
+    "manifestVersion": 1,
+    "id": "waffle-give",
+    "name": "Waffle Give",
+    "description": "Pick a household member, dial in an amount with + and -, and give that many waffles to their balance. One user per submit, so an accidental tap only ever affects the person you actually picked.",
+    "category": "chores-rewards",
+    "author": "HomeGlow",
+    "apiVersion": "v1",
+    "settings": [
+      { "key": "step", "label": "Amount per +/- tap", "type": "number",
+        "default": 1, "min": 1, "max": 20, "scope": "household" }
+    ],
+    "hideableControls": [
+      { "id": "give", "label": "Give waffles to a user" }
+    ]
+  }
+  </script>
+
+  <style>
+    /* Styling deliberately mirrors Waffle Subtract/ChoreWidget/Routines: 1px
+       --card-border cards at 8px radius, a 32px round --accent button, the
+       same chip geometry. A waffle tool should not look like a different app. */
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 12px;
+      background: var(--card-bg, #fff);
+      color: var(--text, #333);
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+    }
+
+    .head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .head h1 { font-size: 0.9rem; margin: 0; font-weight: 700; }
+
+    .note, .err {
+      border-radius: 8px;
+      padding: 7px 9px;
+      font-size: 0.78rem;
+      margin-bottom: 8px;
+    }
+    .note { border: 1px solid var(--card-border, rgba(128,128,128,0.3)); opacity: 0.75; }
+    .err {
+      border: 1px solid rgba(244, 67, 54, 0.55);
+      background: rgba(244, 67, 54, 0.10);
+    }
+
+    .locked { padding: 16px 4px; opacity: 0.6; font-size: 0.85rem; }
+
+    h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+         opacity: 0.55; margin: 12px 0 6px; font-weight: 700; }
+    h2:first-of-type { margin-top: 0; }
+
+    .amount-row { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 6px 0 10px; }
+    .amount-btn {
+      width: 40px; height: 40px; border-radius: 50%;
+      border: 1px solid var(--card-border, rgba(128,128,128,0.3));
+      background: transparent; color: inherit; font-size: 1.3rem; line-height: 1;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+    .amount-btn:active { background: rgba(var(--accent-rgb, 0,0,0), 0.12); }
+    .amount-value { font-size: 1.6rem; font-weight: 700; min-width: 2.4em; text-align: center; }
+
+    .users { display: flex; flex-direction: column; gap: 6px; }
+    .user {
+      display: flex; align-items: center; gap: 10px;
+      border: 1px solid var(--card-border, rgba(128,128,128,0.3));
+      border-radius: 8px; padding: 8px 10px; cursor: pointer;
+    }
+    .user.on { border-color: var(--accent, #7c5cff); background: rgba(var(--accent-rgb, 124,92,255), 0.10); }
+    .user .avatar {
+      width: 28px; height: 28px; border-radius: 50%; object-fit: cover;
+      background: var(--accent, #7c5cff); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
+    }
+    .user .name { flex: 1; }
+    .user .balance { font-size: 0.78rem; opacity: 0.6; }
+
+    .empty { opacity: 0.6; font-size: 0.85rem; padding: 10px 2px; }
+
+    .btn {
+      background: var(--accent, #7c5cff); color: #fff; border: none;
+      border-radius: 8px; padding: 10px 14px; font-size: 0.9rem; font-weight: 600;
+      cursor: pointer; width: 100%; margin-top: 12px;
+      font-family: inherit;
+    }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+  </style>
+</head>
+<body>
+  <div class="head"><h1 id="title">Waffle Give</h1></div>
+  <div id="notes"></div>
+  <div id="view"></div>
+
+  <script src="/plugin-sdk/v1.js"></script>
+  <script>
+    var SDK = (typeof HomeGlow !== 'undefined') ? HomeGlow : null;
+    var API = ''; // same-origin, like every other core-API-calling plugin.
+
+    var params = new URLSearchParams(location.search);
+    var HIDDEN_CONTROLS = (params.get('hide') || '').split(',').filter(Boolean);
+    var GIVE_HIDDEN = HIDDEN_CONTROLS.indexOf('give') !== -1;
+
+    var state = {
+      users: [],
+      selectedId: null,
+      amount: 1,
+      step: 1,
+      busy: false,
+      notes: [],
+    };
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    function note(text) {
+      state.notes = [text];
+      render();
+    }
+
+    function fetchJson(url, opts) {
+      return fetch(API + url, opts).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          if (!res.ok) throw new Error(body.error || ('HTTP ' + res.status));
+          return body;
+        });
+      });
+    }
+
+    function loadUsers() {
+      return fetchJson('/api/users').then(function (users) {
+        state.users = Array.isArray(users) ? users : [];
+      }).catch(function (e) {
+        note('Could not load users: ' + e.message);
+      });
+    }
+
+    function loadSettings() {
+      if (!SDK) return Promise.resolve();
+      return SDK.settings.get().then(function (v) {
+        var n = parseInt(v && v.step, 10);
+        state.step = isNaN(n) || n < 1 ? 1 : n;
+        state.amount = state.step;
+      }).catch(function () {});
+    }
+
+    function initials(name) {
+      return String(name || '?').trim().slice(0, 1).toUpperCase();
+    }
+
+    function render() {
+      document.getElementById('notes').innerHTML = state.notes.map(function (n) {
+        return '<div class="' + (/could not|failed/i.test(n) ? 'err' : 'note') + '">' + esc(n) + '</div>';
+      }).join('');
+
+      var view = document.getElementById('view');
+
+      if (GIVE_HIDDEN) {
+        view.innerHTML = '<div class="locked">Giving waffles is turned off on this display.</div>';
+        return;
+      }
+
+      if (!state.users.length) {
+        view.innerHTML = '<div class="empty">No users yet. Add household members in Admin &rarr; Family.</div>';
+        return;
+      }
+
+      var h = '<h2>Amount</h2>';
+      h += '<div class="amount-row">' +
+           '<button class="amount-btn" id="dec" type="button" aria-label="Decrease amount">&minus;</button>' +
+           '<span class="amount-value">' + state.amount + '</span>' +
+           '<button class="amount-btn" id="inc" type="button" aria-label="Increase amount">+</button>' +
+           '</div>';
+
+      h += '<h2>Who</h2><div class="users">';
+      state.users.forEach(function (u) {
+        var on = state.selectedId === u.id;
+        h += '<div class="user ' + (on ? 'on' : '') + '" data-user="' + u.id + '">';
+        if (u.profile_picture) {
+          h += '<img class="avatar" src="' + esc(u.profile_picture) + '" alt="">';
+        } else {
+          h += '<span class="avatar">' + esc(initials(u.username)) + '</span>';
+        }
+        h += '<span class="name">' + esc(u.username) + '</span>' +
+             '<span class="balance">' + (u.clam_total || 0) + '</span></div>';
+      });
+      h += '</div>';
+
+      var selected = state.users.filter(function (u) { return u.id === state.selectedId; })[0];
+      var label = selected
+        ? 'Give ' + state.amount + ' to ' + esc(selected.username)
+        : 'Pick a user';
+      h += '<button class="btn" id="submit" ' + (selected && !state.busy ? '' : 'disabled') + '>' + label + '</button>';
+
+      view.innerHTML = h;
+    }
+
+    function submit() {
+      if (!state.selectedId || state.busy) return;
+      state.busy = true;
+      state.notes = [];
+      render();
+      fetchJson('/api/users/' + state.selectedId + '/clams/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: state.amount }),
+      }).then(function (result) {
+        var user = state.users.filter(function (u) { return u.id === state.selectedId; })[0];
+        if (user) user.clam_total = result.clam_total;
+        state.selectedId = null;
+        state.busy = false;
+        note('Done. New total: ' + result.clam_total + '.');
+      }).catch(function (e) {
+        state.busy = false;
+        note('Could not give waffles: ' + e.message);
+      });
+    }
+
+    document.addEventListener('click', function (ev) {
+      var el;
+      if ((el = ev.target.closest('#inc'))) {
+        state.amount += state.step;
+        render();
+        return;
+      }
+      if ((el = ev.target.closest('#dec'))) {
+        state.amount = Math.max(state.step, state.amount - state.step);
+        render();
+        return;
+      }
+      if ((el = ev.target.closest('[data-user]'))) {
+        var id = parseInt(el.getAttribute('data-user'), 10);
+        state.selectedId = state.selectedId === id ? null : id;
+        render();
+        return;
+      }
+      if ((el = ev.target.closest('#submit'))) {
+        submit();
+      }
+    });
+
+    Promise.all([loadUsers(), loadSettings()]).then(render);
+
+    if (SDK && SDK.on) {
+      // Another display (or this widget's own submit) changed a balance —
+      // refresh so every instance shows the current totals.
+      SDK.on('clam.deposited', function () { loadUsers().then(render); });
+      SDK.on('clam.withdrawn', function () { loadUsers().then(render); });
+    }
+  </script>
+</body>
+</html>
