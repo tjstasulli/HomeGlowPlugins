@@ -19,7 +19,10 @@
       { "key": "person", "label": "Show routines for (username, blank = everyone)", "type": "string",
         "default": "", "scope": "device" },
       { "key": "showDone", "label": "Show finished routines", "type": "boolean",
-        "default": true, "scope": "device" }
+        "default": true, "scope": "device" },
+      { "key": "layout", "label": "Layout", "type": "select", "options": ["people", "status"],
+        "default": "people", "scope": "device",
+        "description": "people: one column per person, tap a name to fold their list. status: one list grouped Now / Later / Done." }
     ],
     "hideableControls": [
       { "id": "setUp", "label": "Set up routines (add, edit, delete, manage steps)" }
@@ -105,6 +108,21 @@
       font-weight: 700;
     }
     .group-label:first-child { margin-top: 0; }
+
+    /* --- by-person layout: a column per person, side by side --- */
+    .people { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+    .person { flex: 1 1 220px; min-width: 0; }
+    .phead {
+      display: flex; align-items: center; gap: 8px; width: 100%;
+      background: transparent; color: inherit; font: inherit; text-align: left;
+      border: 1px solid var(--card-border, rgba(128,128,128,0.3));
+      border-radius: 8px; padding: 9px 12px; margin-bottom: 8px; cursor: pointer;
+    }
+    .phead .pname { font-weight: 700; }
+    .phead .pcount { margin-left: auto; font-size: 0.75rem; opacity: 0.6; }
+    .phead .caret { opacity: 0.6; transition: transform 0.15s; }
+    .person.folded .phead .caret { transform: rotate(-90deg); }
+    .person.folded .pbody { display: none; }
 
     /* --- cards: same geometry as .chore-card --- */
     .card {
@@ -528,7 +546,9 @@
       history: [], expanded: {}, notes: [],
       // Routine chores no routine here claims (see findOrphans).
       orphans: [],
-      settings: { person: '', showDone: true },
+      settings: { person: '', showDone: true, layout: 'people' },
+      // User ids whose column is folded in the by-person layout.
+      collapsedPeople: {},
       setup: false,
       // Id of the routine being edited in the setup form, or null.
       editing: null,
@@ -1671,6 +1691,36 @@
       view.innerHTML = (sc ? sc.html : '') + rest;
     }
 
+    // One column per person, in the household's user order. A person's header
+    // folds their list; the fold is remembered on this display.
+    function peopleColumns(list, todo, later, done, sections, groupsFor) {
+      var ids = state.users.map(function (u) { return u.id; });
+      list.forEach(function (r) { if (ids.indexOf(r.userId) === -1) ids.push(r.userId); });
+      var html = '<div class="people">';
+      ids.forEach(function (id) {
+        var mine = function (arr) { return arr.filter(function (r) { return r.userId === id; }); };
+        var theirs = list.filter(function (r) { return r.userId === id; });
+        if (!theirs.length) return;
+        var u = userById(id);
+        var folded = !!state.collapsedPeople[id];
+        var doneCount = mine(done).length;
+        html += '<div class="person' + (folded ? ' folded' : '') + '">' +
+          '<button type="button" class="phead" data-person="' + esc(id) + '" aria-expanded="' + (!folded) + '">' +
+          '<span class="caret">▾</span><span class="pname">' + esc(u ? u.username : 'Someone') + '</span>' +
+          '<span class="pcount">' + doneCount + '/' + theirs.length + '</span></button>' +
+          '<div class="pbody">' + sections(groupsFor(mine(todo), mine(later), mine(done))) + '</div></div>';
+      });
+      return html + '</div>';
+    }
+
+    function loadCollapsed() {
+      try { state.collapsedPeople = JSON.parse(localStorage.getItem('routines.collapsedPeople') || '{}') || {}; }
+      catch (e) { state.collapsedPeople = {}; }
+    }
+    function saveCollapsed() {
+      try { localStorage.setItem('routines.collapsedPeople', JSON.stringify(state.collapsedPeople)); } catch (e) { /* private mode */ }
+    }
+
     function render() {
       document.getElementById('today').textContent = state.today
         ? new Intl.DateTimeFormat(undefined, {
@@ -1723,16 +1773,30 @@
         else todo.push(r);
       });
 
-      var out = '';
-      function section(label, arr) {
-        if (!arr.length) return;
-        arr.sort(function (a, b) { return (startTimeToday(a) || '99:99').localeCompare(startTimeToday(b) || '99:99'); });
-        out += '<div class="group-label">' + label + '</div>';
-        arr.forEach(function (r) { out += routineCard(r); });
+      function sections(groups) {
+        var html = '';
+        groups.forEach(function (g) {
+          if (!g.arr.length) return;
+          g.arr.sort(function (a, b) { return (startTimeToday(a) || '99:99').localeCompare(startTimeToday(b) || '99:99'); });
+          html += '<div class="group-label">' + g.label + '</div>';
+          g.arr.forEach(function (r) { html += routineCard(r); });
+        });
+        return html;
       }
-      section('Now', todo);
-      section('Later today', later);
-      if (state.settings.showDone) section('Done', done);
+      function groupsFor(t, l, d) {
+        var groups = [{ label: 'Now', arr: t }, { label: 'Later today', arr: l }];
+        if (state.settings.showDone) groups.push({ label: 'Done', arr: d });
+        return groups;
+      }
+
+      var out;
+      var owners = [];
+      list.forEach(function (r) { if (owners.indexOf(r.userId) === -1) owners.push(r.userId); });
+      if (state.settings.layout !== 'status' && !want && owners.length > 1) {
+        out = peopleColumns(list, todo, later, done, sections, groupsFor);
+      } else {
+        out = sections(groupsFor(todo, later, done));
+      }
 
       // Everything for today is finished: the scene, with the finished
       // routines under it when the display shows those.
@@ -1967,6 +2031,14 @@
           .then(render);
         return;
       }
+      if ((el = ev.target.closest('[data-person]'))) {
+        var pid = el.getAttribute('data-person');
+        if (state.collapsedPeople[pid]) delete state.collapsedPeople[pid];
+        else state.collapsedPeople[pid] = true;
+        saveCollapsed();
+        render();
+        return;
+      }
       if ((el = ev.target.closest('[data-toggle]'))) {
         var id = el.getAttribute('data-toggle');
         state.expanded[id] = !state.expanded[id];
@@ -2184,6 +2256,7 @@
       if (theme === 'dark' || theme === 'light') document.documentElement.setAttribute('data-theme', theme);
       if (params.get('transparent') === 'true') document.body.style.background = 'transparent';
 
+      loadCollapsed();
       var start = SDK
         ? SDK.settings.get().then(function (v) { state.settings = Object.assign(state.settings, v || {}); })
             .catch(function () {})
