@@ -15,7 +15,8 @@
         "options": ["all", "affirmations", "positive", "stoic", "motivational"],
         "default": "all", "scope": "device",
         "description": "all: rotates through every category. Or lock this display to just one mood." }
-    ]
+    ],
+    "storage": true
   }
   </script>
   <link rel="stylesheet" href="/index.css">
@@ -88,7 +89,7 @@
     // [text, author, category]. author is null for the generic
     // affirmations/positive lines, which have no single source.
     var QUOTES = [["I am capable of handling whatever today brings.", null, "affirmations"], ["I choose progress over perfection.", null, "affirmations"], ["I am worthy of rest and of effort, in their turn.", null, "affirmations"], ["My pace is my own; I am not behind.", null, "affirmations"], ["I trust myself to figure it out as I go.", null, "affirmations"], ["Today, I will be patient with myself.", null, "affirmations"], ["I am allowed to change my mind as I learn.", null, "affirmations"], ["I bring my best, not a perfect version of myself.", null, "affirmations"], ["I am enough, exactly as I show up today.", null, "affirmations"], ["Small steps still move me forward.", null, "affirmations"], ["I release what I cannot control.", null, "affirmations"], ["I am proud of how far I've already come.", null, "affirmations"], ["My effort today matters, even if the results are slow.", null, "affirmations"], ["I can be gentle with myself and still grow.", null, "affirmations"], ["I have everything I need to begin.", null, "affirmations"], ["I am learning, and that is enough for today.", null, "affirmations"], ["I choose calm over rushing.", null, "affirmations"], ["I am becoming who I am meant to be, one day at a time.", null, "affirmations"], ["My worth isn't measured by my productivity.", null, "affirmations"], ["I give myself permission to start again.", null, "affirmations"], ["A good day starts with one good decision.", null, "positive"], ["There is still time to make today count.", null, "positive"], ["Find one small thing to look forward to today.", null, "positive"], ["Someone's day will be better because you were in it.", null, "positive"], ["Even an ordinary day holds something worth noticing.", null, "positive"], ["You don't need a reason to be kind to yourself today.", null, "positive"], ["Growth is quiet most days -- keep going anyway.", null, "positive"], ["Today is a fresh page, not a continuation of a bad one.", null, "positive"], ["A little laughter makes the hard parts lighter.", null, "positive"], ["What you water today, you'll see tomorrow.", null, "positive"], ["The best time to feel good about today is right now.", null, "positive"], ["Keep an eye out for the good -- it's there.", null, "positive"], ["Your attitude is the one thing you fully choose today.", null, "positive"], ["A small win still counts as a win.", null, "positive"], ["Today doesn't have to be perfect to be good.", null, "positive"], ["Be the reason someone smiles today.", null, "positive"], ["Good things grow from ordinary days like this one.", null, "positive"], ["You get to decide what today means to you.", null, "positive"], ["There is quiet strength in simply showing up today.", null, "positive"], ["Notice one thing today that's going right.", null, "positive"], ["You have power over your mind -- not outside events. Realize this, and you will find strength.", "Marcus Aurelius", "stoic"], ["Waste no more time arguing about what a good man should be. Be one.", "Marcus Aurelius", "stoic"], ["The impediment to action advances action. What stands in the way becomes the way.", "Marcus Aurelius", "stoic"], ["If it is not right, do not do it; if it is not true, do not say it.", "Marcus Aurelius", "stoic"], ["It is not the man who has too little, but the man who craves more, that is poor.", "Seneca", "stoic"], ["We suffer more often in imagination than in reality.", "Seneca", "stoic"], ["Luck is what happens when preparation meets opportunity.", "Seneca", "stoic"], ["Every new beginning comes from some other beginning's end.", "Seneca", "stoic"], ["He who is brave is free.", "Seneca", "stoic"], ["It's not what happens to you, but how you react to it that matters.", "Epictetus", "stoic"], ["No man is free who is not master of himself.", "Epictetus", "stoic"], ["First say to yourself what you would be; and then do what you have to do.", "Epictetus", "stoic"], ["Wealth consists not in having great possessions, but in having few wants.", "Epictetus", "stoic"], ["Men are disturbed not by things, but by the views which they take of things.", "Epictetus", "stoic"], ["He is a wise man who does not grieve for the things which he has not, but rejoices for those which he has.", "Epictetus", "stoic"], ["The willing, destiny guides them. The unwilling, destiny drags them.", "Cleanthes", "stoic"], ["How long are you going to wait before you demand the best for yourself?", "Epictetus", "stoic"], ["Difficulties strengthen the mind, as labor does the body.", "Seneca", "stoic"], ["A gem cannot be polished without friction, nor a man perfected without trials.", "Seneca", "stoic"], ["Begin at once to live, and count each separate day as a separate life.", "Seneca", "stoic"], ["Success is not final, failure is not fatal: it is the courage to continue that counts.", "Winston Churchill", "motivational"], ["We have nothing to fear but fear itself.", "Franklin D. Roosevelt", "motivational"], ["Do what you can, with what you have, where you are.", "Theodore Roosevelt", "motivational"], ["Nothing is impossible; the word itself says 'I'm possible'!", "Audrey Hepburn", "motivational"], ["The future belongs to those who believe in the beauty of their dreams.", "Eleanor Roosevelt", "motivational"], ["Never, never, never give up.", "Winston Churchill", "motivational"], ["Our greatest glory is not in never falling, but in rising every time we fall.", "Confucius", "motivational"], ["The only limit to our realization of tomorrow will be our doubts of today.", "Franklin D. Roosevelt", "motivational"], ["Keep your face always toward the sunshine -- and shadows will fall behind you.", "Walt Whitman", "motivational"], ["It does not matter how slowly you go as long as you do not stop.", "Confucius", "motivational"], ["Twenty years from now you will be more disappointed by the things you didn't do than by the ones you did do.", "Mark Twain", "motivational"], ["Although the world is full of suffering, it is also full of the overcoming of it.", "Helen Keller", "motivational"], ["Optimism is the faith that leads to achievement. Nothing can be done without hope.", "Helen Keller", "motivational"], ["Whether you think you can, or you think you can't -- you're right.", "Henry Ford", "motivational"], ["The way to get started is to quit talking and begin doing.", "Walt Disney", "motivational"], ["Try not to become a person of success, but rather try to become a person of value.", "Albert Einstein", "motivational"], ["Life is not a problem to be solved, but a reality to be experienced.", "Soren Kierkegaard", "motivational"], ["Believe you can and you're halfway there.", "Theodore Roosevelt", "motivational"], ["The best way out is always through.", "Robert Frost", "motivational"], ["What lies behind us and what lies before us are tiny matters compared to what lies within us.", "Ralph Waldo Emerson", "motivational"]];
-    var CATEGORY_LABELS = {"affirmations": "Affirmation", "positive": "Positive", "stoic": "Stoic", "motivational": "Motivational"};
+    var CATEGORY_LABELS = {"affirmations": "Affirmation", "positive": "Positive", "stoic": "Stoic", "motivational": "Motivational", "fresh": "New"};
 
     var TODAY = new Date().toISOString().split('T')[0];
     var dayNum = Math.floor((new Date(TODAY) - new Date('2024-01-01')) / 86400000);
@@ -123,11 +124,33 @@
         '<div class="tag">' + esc(CATEGORY_LABELS[cat] || cat) + '</div>';
     }
 
+    // Quote top-up (see content-refresher on the Pi): a scheduled job
+    // periodically writes freshly-fetched quotes into this plugin's storage
+    // once the baked-in pool's runway gets short. Appended under category
+    // "fresh" -- not one of the dropdown's named moods, since a fetched
+    // quote has no editorial category -- so it only ever shows up in "all".
+    function mergeExtraQuotes() {
+      if (!SDK) return Promise.resolve();
+      return SDK.storage.get('extraQuotes').then(function (extra) {
+        if (!Array.isArray(extra)) return;
+        var seen = {};
+        QUOTES.forEach(function (q) { seen[q[0]] = true; });
+        extra.forEach(function (q) {
+          if (!Array.isArray(q) || typeof q[0] !== 'string' || !q[0].trim()) return;
+          if (seen[q[0]]) return;
+          seen[q[0]] = true;
+          QUOTES.push([q[0], typeof q[1] === 'string' && q[1].trim() ? q[1] : null, 'fresh']);
+        });
+      }).catch(function () {});
+    }
+
     function boot() {
-      if (!SDK) { render('all'); return; }
-      SDK.settings.get()
-        .then(function (v) { render(v && v.category); })
-        .catch(function () { render('all'); });
+      mergeExtraQuotes().then(function () {
+        if (!SDK) { render('all'); return; }
+        return SDK.settings.get()
+          .then(function (v) { render(v && v.category); })
+          .catch(function () { render('all'); });
+      });
     }
 
     boot();
