@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Recipe Book</title>
+  <link rel="stylesheet" href="/index.css">
+
+  <script type="application/json" id="homeglow-manifest">
+  {
+    "manifestVersion": 1,
+    "id": "recipe-book",
+    "name": "Recipe Book",
+    "category": "meals",
+    "description": "A shared family recipe box. Add a recipe once, then follow it step by step while cooking: instructions on the left, ingredients and measurements on the right, with an A-/A+ control so both stay readable from across the kitchen.",
+    "author": "HomeGlow",
+    "apiVersion": "v1",
+    "storage": true
+  }
+  </script>
+
+  <style>
+    /* Styling deliberately mirrors Waffle Subtract/Give: 1px --card-border
+       cards at 8px radius, the same chip/button geometry, so a recipe tool
+       doesn't look like a different app. */
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    body {
+      padding: 12px;
+      background: var(--card-bg, #fff);
+      color: var(--text, #333);
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      overflow-y: auto;
+    }
+
+    .head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .head h1 { font-size: 0.9rem; margin: 0; font-weight: 700; flex: 1; }
+
+    .icon-btn {
+      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+      border: 1px solid var(--card-border, rgba(128,128,128,0.3));
+      background: transparent; color: inherit; font-size: 1rem; line-height: 1;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+    .icon-btn:active { background: rgba(var(--accent-rgb, 0,0,0), 0.12); }
+
+    .note, .err {
+      border-radius: 8px;
+      padding: 7px 9px;
+      font-size: 0.78rem;
+      margin-bottom: 8px;
+    }
+    .note { border: 1px solid var(--card-border, rgba(128,128,128,0.3)); opacity: 0.75; }
+    .err {
+      border: 1px solid rgba(244, 67, 54, 0.55);
+      background: rgba(244, 67, 54, 0.10);
+    }
+
+    .empty { opacity: 0.6; font-size: 0.85rem; padding: 10px 2px; }
+
+    /* --- List view --- */
+    .recipes { display: flex; flex-direction: column; gap: 6px; }
+    .recipe-row {
+      display: flex; align-items: center; gap: 8px;
+      border: 1px solid var(--card-border, rgba(128,128,128,0.3));
+      border-radius: 8px; padding: 9px 10px; cursor: pointer;
+    }
+    .recipe-row:active { background: rgba(var(--accent-rgb, 124,92,255), 0.08); }
+    .recipe-row .title { flex: 1; font-weight: 600; }
+    .recipe-row .meta { font-size: 0.72rem; opacity: 0.6; }
+    .recipe-row .row-actions { display: flex; gap: 4px; }
+    .recipe-row .row-actions button {
+      border: none; background: transparent; color: inherit; opacity: 0.55;
+      font-size: 0.95rem; cursor: pointer; padding: 4px;
+    }
+    .recipe-row .row-actions button:hover { opacity: 1; }
+
+    .confirm-row {
+      display: flex; align-items: center; gap: 8px; justify-content: flex-end;
+      border: 1px solid rgba(244, 67, 54, 0.45); background: rgba(244, 67, 54, 0.08);
+      border-radius: 8px; padding: 8px 10px;
+    }
+    .confirm-row span { flex: 1; font-size: 0.8rem; }
+    .confirm-row button { font-size: 0.78rem; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-family: inherit; }
+    .confirm-row .yes { background: #e53935; color: #fff; border: none; }
+    .confirm-row .no { background: transparent; border: 1px solid var(--card-border, rgba(128,128,128,0.3)); color: inherit; }
+
+    .btn {
+      background: var(--accent, #7c5cff); color: #fff; border: none;
+      border-radius: 8px; padding: 10px 14px; font-size: 0.9rem; font-weight: 600;
+      cursor: pointer; width: 100%; margin-top: 12px;
+      font-family: inherit;
+    }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+    .btn.ghost {
+      background: transparent; color: inherit;
+      border: 1px solid var(--card-border, rgba(128,128,128,0.3));
+    }
+
+    /* --- Form view --- */
+    label.field { display: block; margin-bottom: 10px; }
+    label.field span { display: block; font-size: 0.72rem; text-transform: uppercase;
+      letter-spacing: 0.06em; opacity: 0.55; font-weight: 700; margin-bottom: 4px; }
+    .field input, .field textarea {
+      width: 100%; font-family: inherit; font-size: 0.85rem;
+      border: 1px solid var(--card-border, rgba(128,128,128,0.3));
+      border-radius: 8px; padding: 8px 9px; background: transparent; color: inherit;
+      resize: vertical;
+    }
+    .field textarea { min-height: 90px; line-height: 1.5; }
+    .field .hint { font-size: 0.68rem; opacity: 0.55; margin-top: 3px; }
+    .form-actions { display: flex; gap: 8px; margin-top: 4px; }
+    .form-actions .btn { margin-top: 0; }
+
+    /* --- Cook view --- */
+    .cook-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .cook-head h1 { flex: 1; font-size: 1.05rem; }
+    .scale-ctrl { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+    .scale-ctrl .icon-btn { font-weight: 800; }
+
+    .cook-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 18px;
+    }
+    .cook-col h2 {
+      font-size: calc(0.78rem * var(--scale, 1));
+      text-transform: uppercase; letter-spacing: 0.06em;
+      opacity: 0.55; margin: 0 0 8px; font-weight: 700;
+    }
+    .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+    .steps li {
+      display: flex; gap: 10px; align-items: baseline;
+      font-size: calc(1rem * var(--scale, 1));
+      line-height: 1.5;
+    }
+    .steps .num {
+      flex-shrink: 0; width: calc(1.6em * var(--scale, 1)); height: calc(1.6em * var(--scale, 1));
+      border-radius: 50%; background: var(--accent, #7c5cff); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: calc(0.85rem * var(--scale, 1)); font-weight: 700;
+    }
+    .ingredients { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .ingredients li {
+      font-size: calc(1rem * var(--scale, 1));
+      line-height: 1.5;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--card-border, rgba(128,128,128,0.2));
+    }
+    .ingredients li:last-child { border-bottom: none; }
+  </style>
+</head>
+<body>
+  <div id="notes"></div>
+  <div id="view"></div>
+
+  <script src="/plugin-sdk/v1.js"></script>
+  <script>
+    var SDK = (typeof HomeGlow !== 'undefined') ? HomeGlow : null;
+    var SCALE_KEY = 'recipe-book:scale';
+    var SCALE_MIN = 0.7, SCALE_MAX = 2.0, SCALE_STEP = 0.1;
+
+    var state = {
+      view: 'list',       // 'list' | 'form' | 'cook'
+      recipes: [],
+      editingId: null,    // id being edited, or null when adding
+      activeId: null,      // recipe open in cook view
+      confirmDeleteId: null,
+      scale: loadScale(),
+      busy: false,
+      notes: [],
+    };
+
+    function loadScale() {
+      try {
+        var v = parseFloat(localStorage.getItem(SCALE_KEY));
+        if (!isNaN(v) && v >= SCALE_MIN && v <= SCALE_MAX) return v;
+      } catch (e) {}
+      return 1;
+    }
+    function saveScale(v) {
+      try { localStorage.setItem(SCALE_KEY, String(v)); } catch (e) {}
+    }
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    function note(text) {
+      state.notes = [text];
+      render();
+    }
+
+    function linesOf(text) {
+      return String(text || '').split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+    }
+
+    function loadRecipes() {
+      if (!SDK) {
+        note('No plugin storage available -- recipes cannot be saved on this display.');
+        return Promise.resolve();
+      }
+      return SDK.storage.get('recipes').then(function (list) {
+        state.recipes = Array.isArray(list) ? list : [];
+      }).catch(function (e) {
+        note('Could not load recipes: ' + e.message);
+      });
+    }
+
+    function saveRecipes() {
+      if (!SDK) return Promise.reject(new Error('no plugin storage on this display'));
+      return SDK.storage.set('recipes', state.recipes);
+    }
+
+    function findRecipe(id) {
+      return state.recipes.filter(function (r) { return r.id === id; })[0] || null;
+    }
+
+    function goList() {
+      state.view = 'list';
+      state.editingId = null;
+      state.activeId = null;
+      state.confirmDeleteId = null;
+      state.notes = [];
+      render();
+    }
+
+    function goAdd() {
+      state.view = 'form';
+      state.editingId = null;
+      state.notes = [];
+      render();
+    }
+
+    function goEdit(id) {
+      state.view = 'form';
+      state.editingId = id;
+      state.notes = [];
+      render();
+    }
+
+    function goCook(id) {
+      state.view = 'cook';
+      state.activeId = id;
+      state.notes = [];
+      render();
+    }
+
+    function adjustScale(delta) {
+      var next = Math.round((state.scale + delta) * 10) / 10;
+      if (next < SCALE_MIN) next = SCALE_MIN;
+      if (next > SCALE_MAX) next = SCALE_MAX;
+      state.scale = next;
+      saveScale(next);
+      render();
+    }
+
+    function submitForm() {
+      var title = (document.getElementById('f-title').value || '').trim();
+      var ingredients = linesOf(document.getElementById('f-ingredients').value);
+      var instructions = linesOf(document.getElementById('f-instructions').value);
+
+      if (!title) { note('A title is required.'); return; }
+      if (!ingredients.length) { note('Add at least one ingredient, one per line.'); return; }
+      if (!instructions.length) { note('Add at least one instruction step, one per line.'); return; }
+
+      if (state.editingId) {
+        var existing = findRecipe(state.editingId);
+        existing.title = title;
+        existing.ingredients = ingredients;
+        existing.instructions = instructions;
+        existing.updatedAt = new Date().toISOString();
+      } else {
+        state.recipes.push({
+          id: 'r' + Date.now() + Math.random().toString(36).slice(2, 7),
+          title: title,
+          ingredients: ingredients,
+          instructions: instructions,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
+      state.busy = true;
+      render();
+      saveRecipes().then(function () {
+        state.busy = false;
+        goList();
+      }).catch(function (e) {
+        state.busy = false;
+        note('Could not save: ' + e.message);
+      });
+    }
+
+    function deleteRecipe(id) {
+      state.recipes = state.recipes.filter(function (r) { return r.id !== id; });
+      state.confirmDeleteId = null;
+      render();
+      saveRecipes().catch(function (e) {
+        note('Could not save after delete: ' + e.message);
+      });
+    }
+
+    function renderList() {
+      var h = '';
+      if (!state.recipes.length) {
+        h += '<div class="empty">No recipes yet. Add the first one below.</div>';
+      } else {
+        h += '<div class="recipes">';
+        state.recipes.slice().sort(function (a, b) { return a.title.localeCompare(b.title); }).forEach(function (r) {
+          if (state.confirmDeleteId === r.id) {
+            h += '<div class="confirm-row"><span>Delete &ldquo;' + esc(r.title) + '&rdquo;?</span>' +
+                 '<button class="yes" data-delete-yes="' + esc(r.id) + '" type="button">Delete</button>' +
+                 '<button class="no" data-delete-no type="button">Cancel</button></div>';
+            return;
+          }
+          h += '<div class="recipe-row" data-open="' + esc(r.id) + '">' +
+               '<span class="title">' + esc(r.title) + '</span>' +
+               '<span class="meta">' + r.ingredients.length + ' ingr &middot; ' + r.instructions.length + ' steps</span>' +
+               '<span class="row-actions">' +
+                 '<button data-edit="' + esc(r.id) + '" type="button" aria-label="Edit">&#9998;</button>' +
+                 '<button data-delete="' + esc(r.id) + '" type="button" aria-label="Delete">&#128465;</button>' +
+               '</span></div>';
+        });
+        h += '</div>';
+      }
+      h += '<button class="btn" id="add-recipe" type="button">+ Add Recipe</button>';
+      return h;
+    }
+
+    function renderForm() {
+      var editing = state.editingId ? findRecipe(state.editingId) : null;
+      var h = '<label class="field"><span>Title</span>' +
+              '<input id="f-title" type="text" maxlength="120" value="' + esc(editing ? editing.title : '') + '" placeholder="e.g. Sunday Pancakes"></label>';
+      h += '<label class="field"><span>Ingredients (one per line, with the measurement)</span>' +
+           '<textarea id="f-ingredients" placeholder="2 cups flour&#10;1 tbsp baking powder&#10;1.5 cups milk">' +
+           esc(editing ? editing.ingredients.join('\n') : '') + '</textarea>' +
+           '<div class="hint">Each line shows up as one item on the ingredients side.</div></label>';
+      h += '<label class="field"><span>Instructions (one step per line)</span>' +
+           '<textarea id="f-instructions" placeholder="Whisk the dry ingredients together&#10;Add milk and egg, stir until just combined&#10;Cook 2-3 min per side on a hot griddle">' +
+           esc(editing ? editing.instructions.join('\n') : '') + '</textarea>' +
+           '<div class="hint">Each line becomes one numbered step.</div></label>';
+      h += '<div class="form-actions">' +
+           '<button class="btn ghost" id="form-cancel" type="button" ' + (state.busy ? 'disabled' : '') + '>Cancel</button>' +
+           '<button class="btn" id="form-save" type="button" ' + (state.busy ? 'disabled' : '') + '>' + (editing ? 'Save Changes' : 'Add Recipe') + '</button>' +
+           '</div>';
+      return h;
+    }
+
+    function renderCook() {
+      var r = findRecipe(state.activeId);
+      if (!r) return '<div class="empty">Recipe not found.</div><button class="btn ghost" id="cook-back" type="button">&larr; Back</button>';
+
+      var h = '<div class="cook-head">' +
+              '<button class="icon-btn" id="cook-back" type="button" aria-label="Back">&larr;</button>' +
+              '<h1>' + esc(r.title) + '</h1>' +
+              '<span class="scale-ctrl">' +
+                '<button class="icon-btn" id="scale-dec" type="button" aria-label="Smaller text">A&minus;</button>' +
+                '<button class="icon-btn" id="scale-inc" type="button" aria-label="Larger text">A+</button>' +
+              '</span></div>';
+
+      h += '<div class="cook-grid" style="--scale:' + state.scale + '">';
+      h += '<div class="cook-col"><h2>Instructions</h2><ol class="steps">';
+      r.instructions.forEach(function (step, i) {
+        h += '<li><span class="num">' + (i + 1) + '</span><span>' + esc(step) + '</span></li>';
+      });
+      h += '</ol></div>';
+      h += '<div class="cook-col"><h2>Ingredients</h2><ul class="ingredients">';
+      r.ingredients.forEach(function (item) {
+        h += '<li>' + esc(item) + '</li>';
+      });
+      h += '</ul></div>';
+      h += '</div>';
+      return h;
+    }
+
+    function render() {
+      document.getElementById('notes').innerHTML = state.notes.map(function (n) {
+        return '<div class="' + (/could not|required|add at least/i.test(n) ? 'err' : 'note') + '">' + esc(n) + '</div>';
+      }).join('');
+
+      var view = document.getElementById('view');
+      if (state.view === 'form') {
+        view.innerHTML = renderForm();
+      } else if (state.view === 'cook') {
+        view.innerHTML = renderCook();
+      } else {
+        view.innerHTML = renderList();
+      }
+    }
+
+    document.addEventListener('click', function (ev) {
+      var el;
+      if ((el = ev.target.closest('#add-recipe'))) { goAdd(); return; }
+      // These three are nested inside a .recipe-row that also carries
+      // data-open, so they must be checked before it -- closest() would
+      // otherwise walk up past the button and match the row underneath.
+      if ((el = ev.target.closest('[data-edit]'))) { goEdit(el.getAttribute('data-edit')); return; }
+      if ((el = ev.target.closest('[data-delete]'))) { state.confirmDeleteId = el.getAttribute('data-delete'); render(); return; }
+      if ((el = ev.target.closest('[data-delete-yes]'))) { deleteRecipe(el.getAttribute('data-delete-yes')); return; }
+      if ((el = ev.target.closest('[data-delete-no]'))) { state.confirmDeleteId = null; render(); return; }
+      if ((el = ev.target.closest('[data-open]'))) { goCook(el.getAttribute('data-open')); return; }
+      if ((el = ev.target.closest('#form-save'))) { submitForm(); return; }
+      if ((el = ev.target.closest('#form-cancel'))) { goList(); return; }
+      if ((el = ev.target.closest('#cook-back'))) { goList(); return; }
+      if ((el = ev.target.closest('#scale-inc'))) { adjustScale(SCALE_STEP); return; }
+      if ((el = ev.target.closest('#scale-dec'))) { adjustScale(-SCALE_STEP); return; }
+    });
+
+    loadRecipes().then(render);
+  </script>
+</body>
+</html>
