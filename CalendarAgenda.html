@@ -21,7 +21,10 @@
       { "key": "showLocation", "label": "Show event locations", "type": "boolean",
         "default": true, "scope": "device" },
       { "key": "showCalendarName", "label": "Show which calendar each event came from", "type": "boolean",
-        "default": true, "scope": "device" }
+        "default": true, "scope": "device" },
+      { "key": "layout", "label": "Layout", "type": "select",
+        "options": ["list", "timeline", "compact"], "default": "list", "scope": "device",
+        "description": "list: time, title, location and calendar per event. timeline: an hour ruler (6am-11pm) with events placed by time. compact: one line per event, time and title only." }
     ]
   }
   </script>
@@ -122,6 +125,34 @@
     .sub { font-size: 0.72rem; opacity: 0.6; margin-top: 1px; }
     .sub .cal { opacity: 0.85; }
 
+    /* compact layout: one line per event, no location/calendar subtext */
+    .ev.compact { padding: 3px 4px; }
+    .ev.compact .title { font-size: 0.78rem; font-weight: 500; }
+
+    /* timeline layout: an hour ruler with events placed and sized by time.
+       All-day and multi-day-spillover events render above it as compact rows
+       instead, since they have no single point on the ruler to anchor to. */
+    .timeline {
+      position: relative;
+      margin: 4px 0 4px 46px;
+      border-left: 1px solid var(--card-border, rgba(128,128,128,0.25));
+    }
+    .tl-hour {
+      position: absolute; left: -46px; width: 38px; text-align: right;
+      font-size: 0.64rem; opacity: 0.45; transform: translateY(-50%);
+    }
+    .tl-line {
+      position: absolute; left: 0; right: 0;
+      border-top: 1px solid var(--card-border, rgba(128,128,128,0.12));
+    }
+    .tl-event {
+      position: absolute; left: 5px; right: 5px; min-height: 18px;
+      border-radius: 5px; padding: 2px 6px; overflow: hidden;
+      font-size: 0.68rem; line-height: 1.25; color: #fff;
+    }
+    .tl-event .tl-title { font-weight: 600; }
+    .tl-event .tl-time { font-size: 0.6rem; opacity: 0.85; }
+
     .empty { opacity: 0.6; font-size: 0.82rem; padding: 12px 2px; }
     .nothing { font-size: 0.75rem; opacity: 0.4; padding: 2px 4px 6px; }
 
@@ -213,7 +244,7 @@
       events: [],
       notes: [],
       picking: false,
-      settings: { days: '7', sources: '', showLocation: true, showCalendarName: true }
+      settings: { days: '7', sources: '', showLocation: true, showCalendarName: true, layout: 'list' }
     };
 
     // ---------- helpers ----------
@@ -428,6 +459,82 @@
         '</div></div>';
     }
 
+    function compactRow(ev, date) {
+      var color = ev.event_color || ev.source_color || 'var(--accent, #757575)';
+      var when = ev.all_day || localDate(ev.start) !== date
+        ? '<span class="when allday">' + (ev.all_day ? 'all day' : 'cont.') + '</span>'
+        : '<span class="when">' + esc(localTime(ev.start)) + '</span>';
+      return '<div class="ev compact">' + when +
+        '<span class="dot" style="background:' + esc(color) + '"></span>' +
+        '<div class="body"><div class="title">' + esc(ev.title || 'Untitled') + '</div></div></div>';
+    }
+
+    // ---------- timeline layout ----------
+
+    var TL_START_HOUR = 6, TL_END_HOUR = 23, TL_HOUR_PX = 36;
+
+    function minutesOfDay(iso) {
+      var parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: state.tz || undefined, hour: 'numeric', minute: '2-digit', hourCycle: 'h23'
+      }).formatToParts(new Date(iso));
+      var h = 0, m = 0;
+      parts.forEach(function (p) {
+        if (p.type === 'hour') h = parseInt(p.value, 10);
+        if (p.type === 'minute') m = parseInt(p.value, 10);
+      });
+      return h * 60 + m;
+    }
+
+    // Events with no single point on the ruler (all-day, or a timed event
+    // that started on an earlier day and is still running) render as compact
+    // rows above it instead of being squeezed onto an hour they don't own.
+    function timelineDay(date, events) {
+      var onRuler = [], aboveRuler = [];
+      events.forEach(function (ev) {
+        if (ev.all_day || localDate(ev.start) !== date) aboveRuler.push(ev);
+        else onRuler.push(ev);
+      });
+
+      var html = '';
+      if (aboveRuler.length) {
+        html += '<div class="allday-row">' +
+          aboveRuler.map(function (ev) { return compactRow(ev, date); }).join('') + '</div>';
+      }
+
+      var rangeStart = TL_START_HOUR * 60, rangeEnd = TL_END_HOUR * 60;
+      var totalPx = (TL_END_HOUR - TL_START_HOUR) * TL_HOUR_PX;
+      html += '<div class="timeline" style="height:' + totalPx + 'px">';
+      for (var h = TL_START_HOUR; h <= TL_END_HOUR; h++) {
+        var top = (h - TL_START_HOUR) * TL_HOUR_PX;
+        html += '<span class="tl-hour" style="top:' + top + 'px">' + hourLabel(h) + '</span>';
+        html += '<span class="tl-line" style="top:' + top + 'px"></span>';
+      }
+      onRuler.forEach(function (ev) {
+        var color = ev.event_color || ev.source_color || 'var(--accent, #757575)';
+        // Clamped to the ruler's displayed hours (6am-11pm) rather than
+        // expanding it: a rare 5am or midnight event still shows, pinned to
+        // the nearest edge, instead of making the ruler taller for everyone
+        // to scroll past on the far more common day.
+        var startMin = Math.max(rangeStart, Math.min(rangeEnd, minutesOfDay(ev.start)));
+        var endMin = ev.end ? minutesOfDay(ev.end) : startMin + 30;
+        if (endMin <= startMin) endMin = startMin + 30;
+        endMin = Math.max(startMin + 15, Math.min(rangeEnd, endMin));
+        var top = (startMin - rangeStart) / 60 * TL_HOUR_PX;
+        var height = Math.max(18, (endMin - startMin) / 60 * TL_HOUR_PX);
+        html += '<div class="tl-event" style="top:' + top + 'px;height:' + height + 'px;background:' + esc(color) + '">' +
+          '<span class="tl-time">' + esc(localTime(ev.start)) + '</span> ' +
+          '<span class="tl-title">' + esc(ev.title || 'Untitled') + '</span></div>';
+      });
+      html += '</div>';
+      return html;
+    }
+
+    function hourLabel(h) {
+      var period = h < 12 || h === 24 ? 'a' : 'p';
+      var h12 = h % 12 === 0 ? 12 : h % 12;
+      return h12 + period;
+    }
+
     function render() {
       var noteBox = document.getElementById('notes');
       noteBox.innerHTML = state.notes.map(function (n) {
@@ -462,7 +569,13 @@
         html += '<div class="dayhead"><span class="dayname">' + esc(dayLabel(date)) + '</span>' +
                 '<span class="daydate">' + esc(shortDate(date)) + '</span>' +
                 '<span class="daycount">' + events.length + '</span></div>';
-        events.forEach(function (ev) { html += eventRow(ev, date); });
+        if (state.settings.layout === 'timeline') {
+          html += timelineDay(date, events);
+        } else if (state.settings.layout === 'compact') {
+          events.forEach(function (ev) { html += compactRow(ev, date); });
+        } else {
+          events.forEach(function (ev) { html += eventRow(ev, date); });
+        }
         html += '</div>';
       });
 
@@ -487,6 +600,13 @@
       ['1', '3', '7', '14', '30'].forEach(function (d) {
         h += '<option value="' + d + '"' + (String(daysAhead()) === d ? ' selected' : '') + '>' +
              (d === '1' ? 'today' : 'next ' + d + ' days') + '</option>';
+      });
+      h += '</select></div>';
+
+      h += '<h2>Layout</h2><div class="row"><select id="layoutSel">';
+      [['list', 'List'], ['timeline', 'Timeline'], ['compact', 'Compact']].forEach(function (opt) {
+        h += '<option value="' + opt[0] + '"' + (state.settings.layout === opt[0] ? ' selected' : '') + '>' +
+             opt[1] + '</option>';
       });
       h += '</select></div>';
 
@@ -532,10 +652,15 @@
     });
 
     document.addEventListener('change', function (ev) {
-      if (ev.target.id !== 'daysSel') return;
-      saveSettings({ days: ev.target.value }).then(function () {
-        return loadAll();
-      }).then(renderPicker).catch(function () {});
+      if (ev.target.id === 'daysSel') {
+        saveSettings({ days: ev.target.value }).then(function () {
+          return loadAll();
+        }).then(renderPicker).catch(function () {});
+        return;
+      }
+      if (ev.target.id === 'layoutSel') {
+        saveSettings({ layout: ev.target.value }).then(renderPicker).catch(function () {});
+      }
     });
 
     // ---------- boot ----------
