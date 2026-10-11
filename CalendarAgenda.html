@@ -135,6 +135,7 @@
     .timeline {
       position: relative;
       margin: 4px 0 4px 46px;
+      padding: 0 5px;
       border-left: 1px solid var(--card-border, rgba(128,128,128,0.25));
     }
     .tl-hour {
@@ -146,7 +147,9 @@
       border-top: 1px solid var(--card-border, rgba(128,128,128,0.12));
     }
     .tl-event {
-      position: absolute; left: 5px; right: 5px; min-height: 18px;
+      /* left/width are set per event, as percentages of the timeline's
+         padding box, to seat side-by-side columns when events overlap. */
+      position: absolute; box-sizing: border-box; min-height: 18px;
       border-radius: 5px; padding: 2px 6px; overflow: hidden;
       font-size: 0.68rem; line-height: 1.25; color: #fff;
     }
@@ -485,6 +488,42 @@
       return h * 60 + m;
     }
 
+    // Lays out a time-sorted list of {startMin, endMin, ...} items into the
+    // fewest side-by-side columns with no two overlapping items sharing one,
+    // and returns each item tagged with its col and the column count (same
+    // for every item in one overlapping cluster, so they all get equal
+    // width) -- the standard calendar-collision algorithm: group into
+    // clusters of transitively overlapping items, then within each cluster
+    // greedily place each item in the first column whose last item has
+    // already ended.
+    function assignColumns(items) {
+      var sorted = items.slice().sort(function (a, b) { return a.startMin - b.startMin; });
+      var out = [];
+      var cluster = [], clusterEnd = -1;
+
+      function flush() {
+        if (!cluster.length) return;
+        var colEnds = [];
+        cluster.forEach(function (item) {
+          var col = colEnds.findIndex(function (end) { return end <= item.startMin; });
+          if (col === -1) { col = colEnds.length; colEnds.push(0); }
+          colEnds[col] = item.endMin;
+          item.col = col;
+        });
+        var numCols = colEnds.length;
+        cluster.forEach(function (item) { item.numCols = numCols; out.push(item); });
+        cluster = [];
+      }
+
+      sorted.forEach(function (item) {
+        if (cluster.length && item.startMin >= clusterEnd) flush();
+        cluster.push(item);
+        clusterEnd = cluster.length === 1 ? item.endMin : Math.max(clusterEnd, item.endMin);
+      });
+      flush();
+      return out;
+    }
+
     // Events with no single point on the ruler (all-day, or a timed event
     // that started on an earlier day and is still running) render as compact
     // rows above it instead of being squeezed onto an hour they don't own.
@@ -509,19 +548,31 @@
         html += '<span class="tl-hour" style="top:' + top + 'px">' + hourLabel(h) + '</span>';
         html += '<span class="tl-line" style="top:' + top + 'px"></span>';
       }
-      onRuler.forEach(function (ev) {
-        var color = ev.event_color || ev.source_color || 'var(--accent, #757575)';
-        // Clamped to the ruler's displayed hours (6am-11pm) rather than
-        // expanding it: a rare 5am or midnight event still shows, pinned to
-        // the nearest edge, instead of making the ruler taller for everyone
-        // to scroll past on the far more common day.
+      // Clamped to the ruler's displayed hours (6am-11pm) rather than
+      // expanding it: a rare 5am or midnight event still shows, pinned to
+      // the nearest edge, instead of making the ruler taller for everyone
+      // to scroll past on the far more common day.
+      var items = onRuler.map(function (ev) {
         var startMin = Math.max(rangeStart, Math.min(rangeEnd, minutesOfDay(ev.start)));
         var endMin = ev.end ? minutesOfDay(ev.end) : startMin + 30;
         if (endMin <= startMin) endMin = startMin + 30;
         endMin = Math.max(startMin + 15, Math.min(rangeEnd, endMin));
-        var top = (startMin - rangeStart) / 60 * TL_HOUR_PX;
-        var height = Math.max(18, (endMin - startMin) / 60 * TL_HOUR_PX);
-        html += '<div class="tl-event" style="top:' + top + 'px;height:' + height + 'px;background:' + esc(color) + '">' +
+        return { ev: ev, startMin: startMin, endMin: endMin };
+      });
+
+      assignColumns(items).forEach(function (item) {
+        var ev = item.ev;
+        var color = ev.event_color || ev.source_color || 'var(--accent, #757575)';
+        var top = (item.startMin - rangeStart) / 60 * TL_HOUR_PX;
+        var height = Math.max(18, (item.endMin - item.startMin) / 60 * TL_HOUR_PX);
+        var colWidthPct = 100 / item.numCols;
+        var leftPct = item.col * colWidthPct;
+        // A small fixed gap between side-by-side columns, not scaled by
+        // numCols, so it stays visible (not a sliver) at any column count.
+        var style = 'top:' + top + 'px;height:' + height + 'px;' +
+          'left:' + leftPct + '%;width:calc(' + colWidthPct + '% - 3px);' +
+          'background:' + esc(color);
+        html += '<div class="tl-event" style="' + style + '">' +
           '<span class="tl-time">' + esc(localTime(ev.start)) + '</span> ' +
           '<span class="tl-title">' + esc(ev.title || 'Untitled') + '</span></div>';
       });
