@@ -9,7 +9,7 @@
     "manifestVersion": 1,
     "id": "rolling-weekly-menu",
     "name": "Rolling Weekly Menu",
-    "description": "A rolling weekly dinner menu. Fill in what is planned for each day in edit mode, and reset the week when it is time to plan again. The menu is saved in shared household plugin storage, so every display in the house shows the same one.",
+    "description": "A rolling weekly dinner menu. Fill in what is planned for each day in edit mode -- type your own line, or link a day to one of your Recipe Book recipes and send its ingredients to the Grocery List with one tap. Reset the week when it is time to plan again. The menu is saved in shared household plugin storage, so every display in the house shows the same one.",
     "category": "meals",
     "apiVersion": "v1",
     "storage": true,
@@ -222,6 +222,36 @@
       text-align: center;
       padding: 1rem 0;
     }
+
+    .toast {
+      margin: 0 0 0.75rem 0;
+      padding: 0.5rem;
+      border-radius: 8px;
+      border: 1px solid rgba(128, 128, 128, 0.3);
+      background: rgba(128, 128, 128, 0.08) !important;
+      color: inherit;
+      font-size: 0.75rem;
+      line-height: 1.4;
+    }
+    .toast.err {
+      border-color: rgba(244, 67, 54, 0.55);
+      background: rgba(244, 67, 54, 0.10) !important;
+    }
+
+    .recipe-link-row { display: flex; gap: 0.4rem; margin-bottom: 0.4rem; }
+    .recipe-select {
+      flex: 1;
+      padding: 0.5rem;
+      border: 1px solid rgba(128, 128, 128, 0.3);
+      border-radius: 6px;
+      background: transparent !important;
+      color: inherit;
+      font-size: 0.78rem;
+    }
+    .or-divider { font-size: 0.68rem; opacity: 0.55; margin: 0.3rem 0; }
+
+    .menu-item-text .recipe-tag { margin-right: 0.3em; }
+    .add-to-grocery-btn { margin-right: 0.25rem; }
   </style>
 </head>
 
@@ -237,6 +267,7 @@
     </div>
 
     <div id="platform-warning" class="platform-warning"></div>
+    <div id="toast"></div>
 
     <div id="menu-days"></div>
   </div>
@@ -250,6 +281,126 @@
     var SETTINGS = createSettingsClient();
     var MENU_STORAGE_KEY = 'recipes';
     var PLATFORM_AVAILABLE = Boolean(STORAGE);
+
+    // Cross-plugin: this widget reads Recipe Book's own storage namespace to
+    // offer "link this day to a recipe", and writes into Grocery List's to
+    // send a linked recipe's ingredients over. The plugin storage API has no
+    // per-plugin ownership check -- any installed plugin's storage is
+    // readable/writable household-wide -- so a plain fetch to the other
+    // plugin's namespace (not SDK.storage, which is locked to this plugin's
+    // own id) is how every cross-plugin link in this codebase works.
+    var RECIPE_BOOK_PLUGIN_ID = 'recipe-book';
+    var GROCERY_LIST_PLUGIN_ID = 'grocery-list';
+    var recipesCache = [];
+
+    function fetchPluginStorage(pluginId, key) {
+      return fetch('/api/plugin/v1/storage/' + encodeURIComponent(pluginId) + '/' + encodeURIComponent(key))
+        .then(function (res) {
+          if (res.status === 404) return null;
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        });
+    }
+
+    function putPluginStorage(pluginId, key, value) {
+      return fetch('/api/plugin/v1/storage/' + encodeURIComponent(pluginId) + '/' + encodeURIComponent(key), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(value),
+      }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { throw new Error(t || ('HTTP ' + res.status)); });
+        return res.json().catch(function () { return {}; });
+      });
+    }
+
+    async function loadRecipesCache() {
+      try {
+        var recipes = await fetchPluginStorage(RECIPE_BOOK_PLUGIN_ID, 'recipes');
+        recipesCache = Array.isArray(recipes) ? recipes : [];
+      } catch (err) {
+        // Recipe Book not installed, or unreachable: the recipe-link row just
+        // doesn't show. Not an error worth surfacing on every load.
+        recipesCache = [];
+      }
+    }
+
+    function escHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    var toastTimer = null;
+    function showToast(text, isError) {
+      var el = document.getElementById('toast');
+      if (!el) return;
+      el.innerHTML = '<div class="toast ' + (isError ? 'err' : '') + '">' + escHtml(text) + '</div>';
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { el.innerHTML = ''; }, 4000);
+    }
+
+    // Same dedupe rule as Grocery List's own upsertItem(): an ingredient
+    // already on the list (checked or not) is never duplicated; a checked one
+    // is reactivated instead, since re-sending it means "need it again".
+    function mergeIntoGroceryList(items, ingredients, recipeTitle) {
+      var normalize = function (s) { return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase(); };
+      var added = 0;
+      ingredients.forEach(function (text) {
+        var norm = normalize(text);
+        if (!norm) return;
+        var existing = items.filter(function (i) { return normalize(i.text) === norm; })[0];
+        if (existing) {
+          if (existing.checked) { existing.checked = false; added++; }
+          return;
+        }
+        items.push({
+          id: 'g' + Date.now() + Math.random().toString(36).slice(2, 7) + added,
+          text: String(text).trim(),
+          checked: false,
+          source: 'recipe',
+          recipeTitle: recipeTitle,
+        });
+        added++;
+      });
+      return added;
+    }
+
+    async function sendIngredientsToGroceryList(dayIndex, itemIndex) {
+      var item = menuData[dayIndex] && menuData[dayIndex][itemIndex];
+      if (!item || typeof item !== 'object' || item.type !== 'recipe') return;
+      try {
+        var current = await fetchPluginStorage(GROCERY_LIST_PLUGIN_ID, 'items');
+        if (!Array.isArray(current)) current = [];
+        var added = mergeIntoGroceryList(current, item.ingredients, item.title);
+        await putPluginStorage(GROCERY_LIST_PLUGIN_ID, 'items', current);
+        showToast(added > 0
+          ? ('Added ' + added + ' ingredient' + (added === 1 ? '' : 's') + ' from "' + item.title + '" to the grocery list.')
+          : ('Everything from "' + item.title + '" was already on the grocery list.'));
+      } catch (err) {
+        console.error(err);
+        showToast('Could not reach the Grocery List widget. Is it installed?', true);
+      }
+    }
+
+    function addRecipeItem(dayIndex) {
+      var select = document.getElementById('add-recipe-select-' + dayIndex);
+      if (!select || !select.value) return;
+      var recipe = recipesCache.filter(function (r) { return r.id === select.value; })[0];
+      if (!recipe) return;
+
+      if (!menuData[dayIndex]) menuData[dayIndex] = [];
+      menuData[dayIndex].push({
+        type: 'recipe',
+        recipeId: recipe.id,
+        title: recipe.title,
+        // Snapshotted at link time, so the grocery-list button and the menu
+        // display both keep working even if the recipe is later edited or
+        // deleted from Recipe Book.
+        ingredients: recipe.ingredients.slice(),
+      });
+      saveMenuData();
+      renderMenu();
+    }
 
     // Control limits: the dashboard names this plugin's hidden controls on the
     // iframe URL, already unprefixed. No param means hide nothing, which is what
@@ -292,6 +443,7 @@
         await loadMenuData();
         repeatWeekly = await readRepeatWeekly();
         await checkAndCycleDays();
+        await loadRecipesCache();
         renderMenu();
       })();
     });
@@ -555,14 +707,24 @@
       buttons.forEach(button => setControlEnabled(button, true));
     }
 
+    // An item is either a plain string (the original, free-typed format) or a
+    // recipe link: { type: 'recipe', recipeId, title, ingredients: [...] },
+    // added by addRecipeItem(). Anything else (a malformed/foreign value) is
+    // dropped rather than stored, same as the original string-only filter did.
+    function isValidItem(item) {
+      if (typeof item === 'string') return item.trim().length > 0;
+      return Boolean(item) && typeof item === 'object'
+        && item.type === 'recipe'
+        && typeof item.title === 'string' && item.title.trim().length > 0
+        && Array.isArray(item.ingredients);
+    }
+
     function normalizeMenuData(candidate) {
       const normalized = {};
 
       dayNames.forEach((day, index) => {
         const rawItems = candidate && candidate[index];
-        normalized[index] = Array.isArray(rawItems)
-          ? rawItems.filter(item => typeof item === 'string' && item.trim().length > 0)
-          : [];
+        normalized[index] = Array.isArray(rawItems) ? rawItems.filter(isValidItem) : [];
       });
 
       if (candidate && typeof candidate.lastCycleDate === 'string') {
@@ -630,6 +792,28 @@
       }
     }
 
+    function renderMenuItem(item, dayIndex, itemIndex) {
+      const isRecipe = item && typeof item === 'object' && item.type === 'recipe';
+      const label = isRecipe
+        ? '<span class="recipe-tag" title="Linked recipe">🍽️</span>' + escHtml(item.title)
+        : escHtml(item);
+
+      let actions = '';
+      if (isRecipe) {
+        actions += `<button class="small-button add-to-grocery-btn" onclick="sendIngredientsToGroceryList(${dayIndex}, ${itemIndex})">+ List</button>`;
+      }
+      if (editMode) {
+        actions += `<button class="small-button" onclick="removeItem(${dayIndex}, ${itemIndex})">×</button>`;
+      }
+
+      return `
+        <div class="menu-item">
+          <span class="menu-item-text">${label}</span>
+          ${actions ? `<div class="menu-item-actions">${actions}</div>` : ''}
+        </div>
+      `;
+    }
+
     function renderMenu() {
       const container = document.getElementById('menu-days');
       const rollingDays = getRollingDayOrder();
@@ -650,20 +834,21 @@
           <div class="menu-items" id="items-${day.index}">
             ${dayItems.length === 0 ?
             '<div class="empty-day">No menu items planned</div>' :
-            dayItems.map((item, itemIndex) => `
-                <div class="menu-item">
-                  <span class="menu-item-text">${item}</span>
-                  ${editMode ? `
-                    <div class="menu-item-actions">
-                      <button class="small-button" onclick="removeItem(${day.index}, ${itemIndex})">×</button>
-                    </div>
-                  ` : ''}
-                </div>
-              `).join('')
+            dayItems.map((item, itemIndex) => renderMenuItem(item, day.index, itemIndex)).join('')
           }
           </div>
           ${editMode ? `
             <div class="add-item-container" id="add-container-${day.index}">
+              ${recipesCache.length ? `
+                <div class="recipe-link-row">
+                  <select class="recipe-select" id="add-recipe-select-${day.index}">
+                    <option value="">Add from Recipe Book...</option>
+                    ${recipesCache.map(r => `<option value="${escHtml(r.id)}">${escHtml(r.title)}</option>`).join('')}
+                  </select>
+                  <button class="small-button" onclick="addRecipeItem(${day.index})">Add</button>
+                </div>
+                <div class="or-divider">or type your own:</div>
+              ` : ''}
               <input type="text" class="add-item-input" id="add-input-${day.index}"
                      placeholder="Add menu item..."
                      onkeypress="handleAddKeyPress(event, ${day.index})">

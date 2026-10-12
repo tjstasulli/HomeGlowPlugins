@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Grocery List</title>
+  <link rel="stylesheet" href="/index.css">
+
+  <script type="application/json" id="homeglow-manifest">
+  {
+    "manifestVersion": 1,
+    "id": "grocery-list",
+    "name": "Grocery List",
+    "description": "A shared household shopping list. Add items by hand, or send a recipe's ingredients here with one tap from Recipe Book or the Rolling Weekly Menu. Check items off while you shop, then clear checked items or the whole list when you're done.",
+    "category": "household",
+    "author": "HomeGlow",
+    "apiVersion": "v1",
+    "storage": true,
+    "hideableControls": [
+      { "id": "edit", "label": "Add, check off, or clear items" }
+    ]
+  }
+  </script>
+
+  <style>
+    /* Styling deliberately mirrors Recipe Book/Waffle Give: 1px --card-border
+       cards at 8px radius, the same chip/button geometry, so a list tool
+       doesn't look like a different app. */
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+
+    html, body { margin: 0; width: 100%; height: 100%; }
+
+    body {
+      padding: 12px;
+      background: var(--card-bg, #fff);
+      color: var(--text, #333);
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      overflow-y: auto;
+    }
+
+    .head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .head h1 { font-size: 0.9rem; margin: 0; font-weight: 700; flex: 1; }
+    .head .count { font-size: 0.72rem; opacity: 0.55; }
+
+    .note, .err {
+      border-radius: 8px; padding: 7px 9px; font-size: 0.78rem; margin-bottom: 8px;
+    }
+    .note { border: 1px solid var(--card-border, rgba(128,128,128,0.3)); opacity: 0.75; }
+    .err { border: 1px solid rgba(244, 67, 54, 0.55); background: rgba(244, 67, 54, 0.10); }
+
+    .locked { padding: 16px 4px; opacity: 0.6; font-size: 0.85rem; }
+    .empty { opacity: 0.6; font-size: 0.85rem; padding: 10px 2px; }
+
+    .add-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .add-row input {
+      flex: 1; font-family: inherit; font-size: 0.85rem;
+      border: 1px solid var(--card-border, rgba(128,128,128,0.3));
+      border-radius: 8px; padding: 8px 10px; background: transparent; color: inherit;
+    }
+    .add-row button {
+      background: var(--accent, #7c5cff); color: #fff; border: none;
+      border-radius: 8px; padding: 0 16px; font-size: 0.85rem; font-weight: 600;
+      cursor: pointer; font-family: inherit;
+    }
+    .add-row button:disabled { opacity: 0.4; cursor: default; }
+
+    h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em;
+         opacity: 0.55; margin: 14px 0 6px; font-weight: 700; }
+    h2:first-of-type { margin-top: 0; }
+
+    .items { display: flex; flex-direction: column; gap: 6px; }
+    .item {
+      display: flex; align-items: center; gap: 10px;
+      border: 1px solid var(--card-border, rgba(128,128,128,0.3));
+      border-radius: 8px; padding: 8px 10px;
+    }
+    .item input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; cursor: pointer; accent-color: var(--accent, #7c5cff); }
+    .item .text { flex: 1; cursor: pointer; }
+    .item .source { font-size: 0.68rem; opacity: 0.5; display: block; margin-top: 1px; }
+    .item.checked .text { text-decoration: line-through; opacity: 0.5; }
+    .item .del {
+      border: none; background: transparent; color: inherit; opacity: 0.5;
+      font-size: 0.95rem; cursor: pointer; padding: 4px;
+    }
+    .item .del:hover { opacity: 1; }
+
+    .list-actions { display: flex; gap: 8px; margin-top: 14px; }
+    .btn.ghost {
+      flex: 1; background: transparent; color: inherit;
+      border: 1px solid var(--card-border, rgba(128,128,128,0.3));
+      border-radius: 8px; padding: 9px 12px; font-size: 0.82rem; font-weight: 600;
+      cursor: pointer; font-family: inherit;
+    }
+    .btn.ghost:disabled { opacity: 0.35; cursor: default; }
+
+    .confirm-row {
+      display: flex; align-items: center; gap: 8px; justify-content: flex-end;
+      border: 1px solid rgba(244, 67, 54, 0.45); background: rgba(244, 67, 54, 0.08);
+      border-radius: 8px; padding: 8px 10px; margin-top: 14px;
+    }
+    .confirm-row span { flex: 1; font-size: 0.8rem; }
+    .confirm-row button { font-size: 0.78rem; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-family: inherit; }
+    .confirm-row .yes { background: #e53935; color: #fff; border: none; }
+    .confirm-row .no { background: transparent; border: 1px solid var(--card-border, rgba(128,128,128,0.3)); color: inherit; }
+  </style>
+</head>
+<body>
+  <div class="head"><h1>Grocery List</h1><span class="count" id="count"></span></div>
+  <div id="notes"></div>
+  <div id="view"></div>
+
+  <script src="/plugin-sdk/v1.js"></script>
+  <script>
+    var SDK = (typeof HomeGlow !== 'undefined') ? HomeGlow : null;
+
+    var params = new URLSearchParams(location.search);
+    var HIDDEN_CONTROLS = (params.get('hide') || '').split(',').filter(Boolean);
+    var EDIT_HIDDEN = HIDDEN_CONTROLS.indexOf('edit') !== -1;
+
+    var state = {
+      items: [],       // [{ id, text, checked, source: 'manual'|'recipe', recipeTitle? }]
+      confirmClearAll: false,
+      busy: false,
+      notes: [],
+    };
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    function note(text) {
+      state.notes = [text];
+      render();
+    }
+
+    function normalizeText(s) {
+      return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    }
+
+    function loadItems() {
+      if (!SDK) {
+        note('No plugin storage available -- the list cannot be saved on this display.');
+        return Promise.resolve();
+      }
+      return SDK.storage.get('items').then(function (list) {
+        state.items = Array.isArray(list) ? list : [];
+      }).catch(function (e) {
+        note('Could not load the list: ' + e.message);
+      });
+    }
+
+    function saveItems() {
+      if (!SDK) return Promise.reject(new Error('no plugin storage on this display'));
+      return SDK.storage.set('items', state.items);
+    }
+
+    // Shared by the on-widget add box and sendIngredients() below: an item
+    // already on the list (checked or not) is never duplicated -- a checked
+    // one just gets reactivated, since "it's on the list again" is what
+    // re-adding a bought item means.
+    function upsertItem(text, source, recipeTitle) {
+      var norm = normalizeText(text);
+      if (!norm) return false;
+      var existing = state.items.filter(function (i) { return normalizeText(i.text) === norm; })[0];
+      if (existing) {
+        if (existing.checked) { existing.checked = false; return true; }
+        return false;
+      }
+      state.items.push({
+        id: 'g' + Date.now() + Math.random().toString(36).slice(2, 7),
+        text: String(text).trim(),
+        checked: false,
+        source: source || 'manual',
+        recipeTitle: source === 'recipe' ? recipeTitle : undefined,
+      });
+      return true;
+    }
+
+    function addFromInput() {
+      var input = document.getElementById('add-input');
+      var text = input.value.trim();
+      if (!text) return;
+      upsertItem(text, 'manual');
+      input.value = '';
+      state.busy = true;
+      render();
+      saveItems().then(function () { state.busy = false; render(); })
+        .catch(function (e) { state.busy = false; note('Could not save: ' + e.message); });
+    }
+
+    function toggleItem(id) {
+      var item = state.items.filter(function (i) { return i.id === id; })[0];
+      if (!item) return;
+      item.checked = !item.checked;
+      render();
+      saveItems().catch(function (e) { note('Could not save: ' + e.message); });
+    }
+
+    function deleteItem(id) {
+      state.items = state.items.filter(function (i) { return i.id !== id; });
+      render();
+      saveItems().catch(function (e) { note('Could not save: ' + e.message); });
+    }
+
+    function clearChecked() {
+      state.items = state.items.filter(function (i) { return !i.checked; });
+      render();
+      saveItems().catch(function (e) { note('Could not save: ' + e.message); });
+    }
+
+    function clearAll() {
+      state.items = [];
+      state.confirmClearAll = false;
+      render();
+      saveItems().catch(function (e) { note('Could not save: ' + e.message); });
+    }
+
+    function renderItemRow(item) {
+      var sourceLabel = item.source === 'recipe' && item.recipeTitle
+        ? '<span class="source">from ' + esc(item.recipeTitle) + '</span>' : '';
+      if (EDIT_HIDDEN) {
+        return '<div class="item ' + (item.checked ? 'checked' : '') + '">' +
+          '<input type="checkbox" disabled ' + (item.checked ? 'checked' : '') + '>' +
+          '<span class="text">' + esc(item.text) + sourceLabel + '</span></div>';
+      }
+      return '<div class="item ' + (item.checked ? 'checked' : '') + '">' +
+        '<input type="checkbox" data-toggle="' + esc(item.id) + '" ' + (item.checked ? 'checked' : '') + '>' +
+        '<span class="text" data-toggle="' + esc(item.id) + '">' + esc(item.text) + sourceLabel + '</span>' +
+        '<button class="del" data-delete="' + esc(item.id) + '" type="button" aria-label="Remove">&#10005;</button>' +
+        '</div>';
+    }
+
+    function render() {
+      document.getElementById('notes').innerHTML = state.notes.map(function (n) {
+        return '<div class="' + (/could not/i.test(n) ? 'err' : 'note') + '">' + esc(n) + '</div>';
+      }).join('');
+
+      var unchecked = state.items.filter(function (i) { return !i.checked; });
+      var checked = state.items.filter(function (i) { return i.checked; });
+      document.getElementById('count').textContent = state.items.length
+        ? (unchecked.length + ' to get')
+        : '';
+
+      var view = document.getElementById('view');
+      var h = '';
+
+      if (!EDIT_HIDDEN) {
+        h += '<div class="add-row"><input id="add-input" type="text" maxlength="120" placeholder="Add an item...">' +
+             '<button id="add-btn" type="button" ' + (state.busy ? 'disabled' : '') + '>Add</button></div>';
+      }
+
+      if (!state.items.length) {
+        h += '<div class="empty">Nothing on the list yet.</div>';
+      } else {
+        if (unchecked.length) {
+          h += '<div class="items">' + unchecked.map(renderItemRow).join('') + '</div>';
+        } else {
+          h += '<div class="empty">Everything is checked off.</div>';
+        }
+        if (checked.length) {
+          h += '<h2>Checked</h2><div class="items">' + checked.map(renderItemRow).join('') + '</div>';
+        }
+      }
+
+      if (!EDIT_HIDDEN && state.items.length) {
+        if (state.confirmClearAll) {
+          h += '<div class="confirm-row"><span>Clear the whole list?</span>' +
+               '<button class="yes" id="clear-all-yes" type="button">Clear All</button>' +
+               '<button class="no" id="clear-all-no" type="button">Cancel</button></div>';
+        } else {
+          h += '<div class="list-actions">' +
+               '<button class="btn ghost" id="clear-checked" type="button" ' + (checked.length ? '' : 'disabled') + '>Clear Checked</button>' +
+               '<button class="btn ghost" id="clear-all" type="button">Clear All</button>' +
+               '</div>';
+        }
+      }
+
+      if (EDIT_HIDDEN) {
+        h = '<div class="locked">Editing this list is turned off on this display.</div>' + h;
+      }
+
+      view.innerHTML = h;
+    }
+
+    document.addEventListener('click', function (ev) {
+      var el;
+      if ((el = ev.target.closest('#add-btn'))) { addFromInput(); return; }
+      if ((el = ev.target.closest('[data-toggle]'))) { toggleItem(el.getAttribute('data-toggle')); return; }
+      if ((el = ev.target.closest('[data-delete]'))) { deleteItem(el.getAttribute('data-delete')); return; }
+      if ((el = ev.target.closest('#clear-checked'))) { clearChecked(); return; }
+      if ((el = ev.target.closest('#clear-all'))) { state.confirmClearAll = true; render(); return; }
+      if ((el = ev.target.closest('#clear-all-yes'))) { clearAll(); return; }
+      if ((el = ev.target.closest('#clear-all-no'))) { state.confirmClearAll = false; render(); return; }
+    });
+
+    document.addEventListener('keypress', function (ev) {
+      if (ev.key === 'Enter' && ev.target && ev.target.id === 'add-input') addFromInput();
+    });
+
+    loadItems().then(render);
+  </script>
+</body>
+</html>
