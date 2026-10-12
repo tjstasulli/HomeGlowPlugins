@@ -22,7 +22,23 @@
     /* Styling deliberately mirrors Waffle Subtract/Give: 1px --card-border
        cards at 8px radius, the same chip/button geometry, so a recipe tool
        doesn't look like a different app. */
-    :root { color-scheme: light dark; }
+    /* The host's own /index.css (where --text/--card-bg/--card-border are
+       normally defined) doesn't reach a plugin iframe in production, and the
+       postMessage theme channel isn't reliable enough to depend on alone --
+       so this plugin defines its own light/dark pair for every token it
+       uses, matching the host's real palette, instead of trusting a literal
+       var(--text, #222)'s fallback to ever be theme-correct. */
+    :root {
+      color-scheme: light dark;
+      --text: #171717;
+      --card-bg: #ffffff;
+      --card-border: rgba(128, 128, 128, 0.3);
+    }
+    [data-theme="dark"] {
+      --text: #FFFFFF;
+      --card-bg: #2a2a2a;
+      --card-border: rgba(255, 255, 255, 0.2);
+    }
     * { box-sizing: border-box; }
 
     html, body {
@@ -164,6 +180,10 @@
   <script src="/plugin-sdk/v1.js"></script>
   <script>
     var SDK = (typeof HomeGlow !== 'undefined') ? HomeGlow : null;
+    // Read synchronously, before the first render, so there's no flash of
+    // the wrong palette: the host always puts ?theme= on this iframe's URL.
+    var theme = new URLSearchParams(window.location.search).get('theme');
+    if (theme === 'dark' || theme === 'light') document.documentElement.setAttribute('data-theme', theme);
     var SCALE_KEY = 'recipe-book:scale';
     var SCALE_MIN = 0.7, SCALE_MAX = 2.0, SCALE_STEP = 0.1;
 

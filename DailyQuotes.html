@@ -21,7 +21,21 @@
   </script>
   <link rel="stylesheet" href="/index.css">
   <style>
-    :root { color-scheme: light dark; }
+    /* The host's own /index.css (where --text/--card-bg are normally defined)
+       doesn't reach a plugin iframe in production, and the postMessage theme
+       channel isn't reliable enough to depend on alone -- so this plugin
+       defines its own light/dark pair for every token it uses, matching the
+       host's real palette, instead of trusting var(--text, #222)'s literal
+       fallback to ever be theme-correct. */
+    :root {
+      color-scheme: light dark;
+      --text: #171717;
+      --card-bg: #ffffff;
+    }
+    [data-theme="dark"] {
+      --text: #FFFFFF;
+      --card-bg: #2a2a2a;
+    }
     * { box-sizing: border-box; }
 
     html, body {
@@ -103,6 +117,11 @@
   <script src="/plugin-sdk/v1.js"></script>
   <script>
   (function () {
+    // Read synchronously, before the first render, so there's no flash of
+    // the wrong palette: the host always puts ?theme= on this iframe's URL.
+    var theme = new URLSearchParams(window.location.search).get('theme');
+    if (theme === 'dark' || theme === 'light') document.documentElement.setAttribute('data-theme', theme);
+
     var SDK = (typeof HomeGlow !== 'undefined') ? HomeGlow : null;
 
     // [text, author, category]. author is null for the generic
