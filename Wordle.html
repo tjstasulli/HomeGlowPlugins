@@ -16,26 +16,27 @@
   <link rel="stylesheet" href="/index.css">
   <style>
     * { box-sizing: border-box; }
-    /* The host's own /index.css (where --text/--card-bg are normally
-       defined) doesn't reach a plugin iframe in production, and the
-       postMessage theme channel isn't reliable enough to depend on alone --
-       so this plugin defines its own light/dark pair for every token it
-       uses, matching the host's real palette, instead of trusting var(--text,
-       #222)'s literal fallback to ever be theme-correct. */
+    /* No background paint here on purpose: WidgetContainer.jsx already
+       draws every widget's themed card (background, radius, shadow) behind
+       the iframe via --hg-frame-bg, reliably, in the host's own CSS --
+       painting an opaque body here just covers that up with a guess that
+       can never match a household's actual chosen theme (confirmed live:
+       a cream custom theme rendered as a plain white box). Text still has
+       to be drawn inside the iframe, so --text keeps its own light/dark
+       pair -- the host's /index.css doesn't reach a plugin iframe in
+       production and postMessage isn't reliable enough to depend on alone. */
     :root {
       color-scheme: light dark;
       --text: #171717;
-      --card-bg: #ffffff;
     }
     [data-theme="dark"] {
       --text: #FFFFFF;
-      --card-bg: #2a2a2a;
     }
 
     body {
       margin: 0;
       padding: 14px 10px;
-      background: var(--card-bg, #fff);
+      background: transparent;
       color: var(--text, #222);
       font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
       display: flex;

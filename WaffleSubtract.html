@@ -28,21 +28,22 @@
     /* Styling deliberately mirrors ChoreWidget/Routines: 1px --card-border
        cards at 8px radius, a 32px round --accent button, the same chip
        geometry. A deduction tool should not look like a different app. */
-    /* The host's own /index.css (where --text/--card-bg/--card-border are
-       normally defined) doesn't reach a plugin iframe in production, and the
-       postMessage theme channel isn't reliable enough to depend on alone --
-       so this plugin defines its own light/dark pair for every token it
-       uses, matching the host's real palette, instead of trusting a literal
-       var(--text, #333) fallback to ever be theme-correct. */
+    /* No background paint here on purpose: WidgetContainer.jsx already
+       draws every widget's themed card (background, radius, shadow) behind
+       the iframe via --hg-frame-bg, reliably, in the host's own CSS --
+       painting an opaque body here just covers that up with a guess that
+       can never match a household's actual chosen theme (confirmed live:
+       a cream custom theme rendered as a plain white box). Text still has
+       to be drawn inside the iframe, so --text keeps its own light/dark
+       pair -- the host's /index.css doesn't reach a plugin iframe in
+       production and postMessage isn't reliable enough to depend on alone. */
     :root {
       color-scheme: light dark;
       --text: #171717;
-      --card-bg: #ffffff;
       --card-border: rgba(128, 128, 128, 0.3);
     }
     [data-theme="dark"] {
       --text: #FFFFFF;
-      --card-bg: #2a2a2a;
       --card-border: rgba(255, 255, 255, 0.2);
     }
     * { box-sizing: border-box; }
@@ -50,7 +51,7 @@
     body {
       margin: 0;
       padding: 12px;
-      background: var(--card-bg, #fff);
+      background: transparent;
       color: var(--text, #333);
       font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
       font-size: 14px;
