@@ -1359,6 +1359,47 @@
       });
     }
 
+    // A routine's chore can go missing if someone deletes it by hand (the
+    // Admin Panel's Chores screen, say) without going through this plugin.
+    // Left alone, syncCalendarRoutine's chore-schedules POST below would
+    // fail against the now-nonexistent chore_id forever -- one "Could not
+    // match" toast per sync, with nothing ever fixing it. Recreate the
+    // chore under the same name/icon and move the routine onto it; the old
+    // schedule rows died with the chore (chore_schedules has ON DELETE
+    // CASCADE on chore_id), so any pinned scheduleId/dates pointing at them
+    // are stale too and are cleared here rather than left to fail one at a
+    // time later.
+    function reconcileChoreLinks(routines) {
+      var withChoreId = routines.filter(function (r) { return r.choreId; });
+      if (!withChoreId.length) return Promise.resolve();
+      return fetchJson(API + '/api/chores').then(function (chores) {
+        var existing = {};
+        (chores || []).forEach(function (c) { existing[c.id] = true; });
+        var missing = withChoreId.filter(function (r) { return !existing[r.choreId]; });
+        if (!missing.length) return;
+        var changed = false;
+        return missing.reduce(function (chain, r) {
+          return chain.then(function () {
+            return send('POST', API + '/api/chores', {
+              title: r.name, description: 'Routine', clam_value: 0, icon: r.icon || null
+            }).then(function (chore) {
+              r.choreId = chore.id;
+              delete r.scheduleId;
+              changed = true;
+              return store.drop('dates:' + r.id);
+            }).catch(function (e) {
+              note('Could not relink "' + r.name + '" to a chore: ' + e.message);
+            });
+          });
+        }, Promise.resolve()).then(function () {
+          if (changed) return store.write('routines', state.routines);
+        });
+      }).catch(function () {
+        // Can't read /api/chores right now -- leave choreIds alone, the
+        // next sync pass will try again.
+      });
+    }
+
     // Every calendar routine, by whichever display claims the slot; `force`
     // skips the claim (a routine was just created or edited here).
     function syncCalendarRoutines(force) {
@@ -1370,7 +1411,7 @@
       if (!list.length) return Promise.resolve(false);
       return (force ? Promise.resolve(true) : claimSyncSlot()).then(function (mine) {
         if (!mine) return false;
-        return fetchEvents().then(function (events) {
+        return reconcileChoreLinks(list).then(fetchEvents).then(function (events) {
           return list.reduce(function (chain, r) {
             return chain.then(function () { return syncCalendarRoutine(r, events); });
           }, Promise.resolve());
