@@ -35,22 +35,26 @@
        8px radius, a 32px round --accent button carrying the icon, the same
        green tint on completion, and the same clam/time chips. A routine
        should not look like a different application. */
-    /* No background paint here on purpose: WidgetContainer.jsx already
-       draws every widget's themed card (background, radius, shadow) behind
-       the iframe via --hg-frame-bg, reliably, in the host's own CSS --
-       painting an opaque body here just covers that up with a guess that
-       can never match a household's actual chosen theme (confirmed live:
-       a cream custom theme rendered as a plain white box). Text still has
-       to be drawn inside the iframe, so --text keeps its own light/dark
-       pair -- the host's /index.css doesn't reach a plugin iframe in
-       production and postMessage isn't reliable enough to depend on alone. */
+    /* A transparent body relying on the host's --hg-frame-bg (set directly
+       on the iframe element) sounds right but isn't: live testing found a
+       transparent plugin body renders solid black over a correctly-themed
+       cream iframe background -- a real compositing quirk with transparent
+       iframe documents, confirmed with every computed value (iframe bg,
+       body bg, html bg) checked and correct, yet the pixels were black
+       regardless. So the body paints its own background after all, but
+       with --surface (confirmed live to carry the household's real theme
+       color, e.g. #FFF8EF for this install's cream theme -- unlike
+       --card-bg, which the host always sends as a generic white regardless
+       of theme). --text works the same way postMessage already does. */
     :root {
       color-scheme: light dark;
       --text: #171717;
+      --surface: #ffffff;
       --card-border: rgba(128, 128, 128, 0.35);
     }
     [data-theme="dark"] {
       --text: #FFFFFF;
+      --surface: #2a2a2a;
       --card-border: rgba(255, 255, 255, 0.2);
     }
     * { box-sizing: border-box; }
@@ -58,7 +62,7 @@
     body {
       margin: 0;
       padding: 12px;
-      background: transparent;
+      background: var(--surface, #fff);
       /* The host defines --text, not --text-color. */
       color: var(--text, #333);
       font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
