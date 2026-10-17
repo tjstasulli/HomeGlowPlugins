@@ -1244,6 +1244,11 @@
     // Matching events in the next CAL_LOOKAHEAD_DAYS, as date -> due time
     // ('' for an all-day event, which then uses the routine's own time).
     // The earliest matching event decides a day's time.
+    //
+    // A multi-day event matches every day it spans, not just its first: an
+    // all-day event's end is exclusive (the day after its last day, the same
+    // convention the core app's own calendar views use), while a timed
+    // event's end is its actual last instant, still inside its last day.
     function matchingDays(r, events) {
       var last = shiftDate(state.today, CAL_LOOKAHEAD_DAYS);
       var days = {};
@@ -1251,10 +1256,17 @@
         if (!titleMatches(r, ev.title)) return;
         if (r.sources && r.sources.length && r.sources.indexOf(ev.source_id) === -1) return;
         var start = new Date(ev.start);
-        var date = dateStringIn(state.tz, start);
-        if (date < state.today || date > last) return;
+        var firstDate = dateStringIn(state.tz, start);
+        var endDate = dateStringIn(state.tz, new Date(ev.end || ev.start));
+        var lastDate = ev.all_day ? shiftDate(endDate, -1) : endDate;
+        if (lastDate < firstDate) lastDate = firstDate;
+        if (lastDate > last) lastDate = last;
+        if (firstDate > last || lastDate < state.today) return;
         var time = ev.all_day ? '' : minusMinutes(timeIn(state.tz, start), r.lead);
-        if (!(date in days) || (time && (!days[date] || time < days[date]))) days[date] = time;
+        var from = firstDate < state.today ? state.today : firstDate;
+        for (var date = from; date <= lastDate; date = shiftDate(date, 1)) {
+          if (!(date in days) || (time && (!days[date] || time < days[date]))) days[date] = time;
+        }
       });
       return days;
     }
