@@ -11,7 +11,7 @@
     "id": "recipe-book",
     "name": "Recipe Book",
     "category": "meals",
-    "description": "A shared family recipe box. Add a recipe once, then follow it step by step while cooking: instructions on the left, ingredients and measurements on the right, with an A-/A+ control so both stay readable from across the kitchen.",
+    "description": "A shared family recipe box, grouped by breakfast/lunch/dinner/snack/dessert so it is easy to browse. Add a recipe once, then open it to cook: instructions on the left, ingredients on the right, with an A-/A+ control and a fullscreen option so both stay readable from across the kitchen. Send a recipe's ingredients to the Grocery List with one tap, scaled to however many servings you need. Comes with a starter set of recipes to get you going.",
     "author": "HomeGlow",
     "apiVersion": "v1",
     "storage": true
@@ -61,6 +61,10 @@
       overflow-y: auto;
     }
 
+    /* Fullscreen is just this document taking over the whole screen (the
+       Fullscreen API on documentElement) -- no extra layout rule needed here
+       beyond letting body keep filling 100%, which it already does. */
+
     .head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
     .head h1 { font-size: 0.9rem; margin: 0; font-weight: 700; flex: 1; }
 
@@ -87,7 +91,18 @@
     .empty { opacity: 0.6; font-size: 0.85rem; padding: 10px 2px; }
 
     /* --- List view --- */
-    .recipes { display: flex; flex-direction: column; gap: 6px; }
+    .category-group { margin-bottom: 6px; }
+    .category-header {
+      display: flex; align-items: center; gap: 8px; width: 100%;
+      background: transparent; border: none; color: inherit; cursor: pointer;
+      font-family: inherit; padding: 8px 2px; text-align: left;
+    }
+    .category-header .chevron { font-size: 0.7rem; opacity: 0.6; width: 1em; }
+    .category-header .cat-name { font-size: 0.78rem; text-transform: uppercase;
+      letter-spacing: 0.06em; font-weight: 700; opacity: 0.75; flex: 1; }
+    .category-header .cat-count { font-size: 0.72rem; opacity: 0.55; }
+
+    .recipes { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
     .recipe-row {
       display: flex; align-items: center; gap: 8px;
       border: 1px solid var(--card-border, rgba(128,128,128,0.3));
@@ -129,22 +144,48 @@
     label.field { display: block; margin-bottom: 10px; }
     label.field span { display: block; font-size: 0.72rem; text-transform: uppercase;
       letter-spacing: 0.06em; opacity: 0.55; font-weight: 700; margin-bottom: 4px; }
-    .field input, .field textarea {
+    .field input, .field textarea, .field select {
       width: 100%; font-family: inherit; font-size: 0.85rem;
       border: 1px solid var(--card-border, rgba(128,128,128,0.3));
       border-radius: 8px; padding: 8px 9px; background: transparent; color: inherit;
       resize: vertical;
     }
+    .field select { background: var(--surface, #fff); }
     .field textarea { min-height: 90px; line-height: 1.5; }
     .field .hint { font-size: 0.68rem; opacity: 0.55; margin-top: 3px; }
+    .two-col { display: flex; gap: 10px; }
+    .two-col .field { flex: 1; }
     .form-actions { display: flex; gap: 8px; margin-top: 4px; }
     .form-actions .btn { margin-top: 0; }
 
+    .ingredient-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+    .ingredient-row .ing-amount { width: 58px; flex-shrink: 0; }
+    .ingredient-row .ing-unit { width: 90px; flex-shrink: 0; }
+    .ingredient-row .ing-item { flex: 1; }
+    .ingredient-row .remove-ingredient {
+      border: none; background: transparent; color: inherit; opacity: 0.5;
+      font-size: 1rem; cursor: pointer; padding: 4px; flex-shrink: 0;
+    }
+    .ingredient-row .remove-ingredient:hover { opacity: 1; }
+    .add-ingredient {
+      background: transparent; color: inherit; font-family: inherit;
+      border: 1px dashed var(--card-border, rgba(128,128,128,0.4));
+      border-radius: 8px; padding: 7px 10px; font-size: 0.8rem; cursor: pointer;
+      width: 100%; margin-bottom: 14px;
+    }
+
     /* --- Cook view --- */
-    .cook-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-    .cook-head h1 { flex: 1; font-size: 1.05rem; }
-    .scale-ctrl { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-    .scale-ctrl .icon-btn { font-weight: 800; }
+    .cook-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+    .cook-head h1 { flex: 1; font-size: 1.05rem; min-width: 120px; }
+    .cook-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .cook-tools .icon-btn { font-weight: 800; }
+    .send-btn {
+      background: transparent; color: inherit; font-family: inherit;
+      border: 1px solid var(--card-border, rgba(128,128,128,0.3));
+      border-radius: 8px; padding: 0 10px; height: 30px; font-size: 0.78rem;
+      font-weight: 600; cursor: pointer; white-space: nowrap;
+    }
+    .send-btn:disabled { opacity: 0.4; cursor: default; }
 
     .cook-grid {
       display: grid;
@@ -156,6 +197,11 @@
       text-transform: uppercase; letter-spacing: 0.06em;
       opacity: 0.55; margin: 0 0 8px; font-weight: 700;
     }
+    .cook-col .col-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+    .cook-col .col-head h2 { margin: 0; }
+    .serving-picker { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .serving-picker .icon-btn { width: 24px; height: 24px; font-size: 0.85rem; }
+    .serving-picker .count { font-size: 0.8rem; font-weight: 700; min-width: 1.6em; text-align: center; }
     .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
     .steps li {
       display: flex; gap: 10px; align-items: baseline;
@@ -192,13 +238,282 @@
     var SCALE_KEY = 'recipe-book:scale';
     var SCALE_MIN = 0.7, SCALE_MAX = 2.0, SCALE_STEP = 0.1;
 
+    var CATEGORIES = ['breakfast', 'lunch', 'dinner', 'snack', 'dessert'];
+    var CATEGORY_LABELS = {
+      breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack', dessert: 'Dessert'
+    };
+
+    // Cross-plugin: writes a sent recipe's ingredients into Grocery List's own
+    // storage namespace. The plugin storage API has no per-plugin ownership
+    // check -- any installed plugin's storage is readable/writable
+    // household-wide -- so a plain fetch to the other plugin's namespace (not
+    // SDK.storage, which is locked to this plugin's own id) is how every
+    // cross-plugin link in this codebase works (see the Rolling Weekly Menu's
+    // own sendIngredientsToGroceryList, which this mirrors).
+    var GROCERY_LIST_PLUGIN_ID = 'grocery-list';
+
+    function fetchPluginStorage(pluginId, key) {
+      return fetch('/api/plugin/v1/storage/' + encodeURIComponent(pluginId) + '/' + encodeURIComponent(key))
+        .then(function (res) {
+          if (res.status === 404) return null;
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.json();
+        });
+    }
+
+    function putPluginStorage(pluginId, key, value) {
+      return fetch('/api/plugin/v1/storage/' + encodeURIComponent(pluginId) + '/' + encodeURIComponent(key), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(value),
+      }).then(function (res) {
+        if (!res.ok) return res.text().then(function (t) { throw new Error(t || ('HTTP ' + res.status)); });
+        return res.json().catch(function () { return {}; });
+      });
+    }
+
+    // Same dedupe rule as Grocery List's own upsertItem(): an ingredient
+    // already on the list (checked or not) is never duplicated; a checked one
+    // is reactivated instead, since re-sending it means "need it again".
+    function mergeIntoGroceryList(items, lines, recipeTitle) {
+      var normalize = function (s) { return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase(); };
+      var added = 0;
+      lines.forEach(function (text) {
+        var norm = normalize(text);
+        if (!norm) return;
+        var existing = items.filter(function (i) { return normalize(i.text) === norm; })[0];
+        if (existing) {
+          if (existing.checked) { existing.checked = false; added++; }
+          return;
+        }
+        items.push({
+          id: 'g' + Date.now() + Math.random().toString(36).slice(2, 7) + added,
+          text: text,
+          checked: false,
+          source: 'recipe',
+          recipeTitle: recipeTitle,
+        });
+        added++;
+      });
+      return added;
+    }
+
+    // Original recipes inspired by the general, well-known structure of a
+    // four-cycle portion-controlled diet book (lean protein + probiotic +
+    // non-starchy vegetables at first, gradually reintroducing whole grains,
+    // fruit and richer choices) -- not transcribed from any book. "cycle" is
+    // just a label shown in the row's meta line; nothing elsewhere depends on
+    // it. Seeded in once, below, if the box is empty.
+    var STARTER_RECIPES = [
+      {
+        title: 'Cottage Cheese & Berry Bowl', category: 'breakfast', cycle: 1, servings: 1,
+        ingredients: [
+          { amount: 1, unit: 'cup', item: 'low-fat cottage cheese' },
+          { amount: 0.75, unit: 'cup', item: 'mixed berries' },
+          { amount: 1, unit: 'tbsp', item: 'ground flaxseed' },
+          { amount: 0.25, unit: 'tsp', item: 'cinnamon' },
+        ],
+        instructions: [
+          'Spoon the cottage cheese into a bowl.',
+          'Top with the mixed berries.',
+          'Sprinkle with ground flaxseed and cinnamon.',
+          'Stir gently and serve chilled.',
+        ],
+      },
+      {
+        title: 'Lemon Herb Chicken & Cucumber Salad', category: 'lunch', cycle: 1, servings: 2,
+        ingredients: [
+          { amount: 2, unit: '', item: 'boneless skinless chicken breasts' },
+          { amount: 1, unit: 'tbsp', item: 'olive oil' },
+          { amount: 1, unit: '', item: 'lemon, juiced' },
+          { amount: 1, unit: 'tsp', item: 'dried oregano' },
+          { amount: 2, unit: 'cups', item: 'cucumber, sliced' },
+          { amount: 1, unit: 'cup', item: 'cherry tomatoes, halved' },
+          { amount: 0.25, unit: 'cup', item: 'red onion, thinly sliced' },
+          { amount: null, unit: '', item: 'salt, to taste' },
+        ],
+        instructions: [
+          'Whisk the olive oil, lemon juice, oregano and salt together.',
+          'Pour half over the chicken and let it sit 10 minutes.',
+          'Grill or pan-sear the chicken 5-6 minutes per side until cooked through.',
+          'Toss the cucumber, tomatoes and red onion with the remaining dressing.',
+          'Slice the chicken and serve over the salad.',
+        ],
+      },
+      {
+        title: 'Baked Tilapia with Steamed Green Beans', category: 'dinner', cycle: 1, servings: 2,
+        ingredients: [
+          { amount: 2, unit: '', item: 'tilapia fillets' },
+          { amount: 1, unit: 'tbsp', item: 'olive oil' },
+          { amount: 1, unit: 'tsp', item: 'paprika' },
+          { amount: 0.5, unit: 'tsp', item: 'garlic powder' },
+          { amount: 2, unit: 'cups', item: 'green beans, trimmed' },
+          { amount: null, unit: '', item: 'salt and pepper, to taste' },
+        ],
+        instructions: [
+          'Preheat the oven to 400°F.',
+          'Rub the tilapia with olive oil, paprika and garlic powder.',
+          'Bake 12-15 minutes until the fish flakes easily.',
+          'Steam the green beans 5-6 minutes until bright green and tender.',
+          'Season both with salt and pepper and serve together.',
+        ],
+      },
+      {
+        title: 'Veggie Egg Scramble with Oats', category: 'breakfast', cycle: 2, servings: 1,
+        ingredients: [
+          { amount: 2, unit: '', item: 'eggs' },
+          { amount: 0.5, unit: 'cup', item: 'bell pepper, diced' },
+          { amount: 0.5, unit: 'cup', item: 'spinach, chopped' },
+          { amount: 0.33, unit: 'cup', item: 'rolled oats' },
+          { amount: 0.75, unit: 'cup', item: 'water' },
+          { amount: 1, unit: 'tsp', item: 'olive oil' },
+        ],
+        instructions: [
+          'Cook the oats in the water over medium heat, about 5 minutes, stirring occasionally.',
+          'Meanwhile, heat the olive oil in a pan and sauté the bell pepper 2 minutes.',
+          'Add the spinach and cook until wilted.',
+          'Pour in the eggs and scramble until set.',
+          'Serve the eggs alongside the oats.',
+        ],
+      },
+      {
+        title: 'Turkey & Brown Rice Lettuce Wraps', category: 'lunch', cycle: 2, servings: 2,
+        ingredients: [
+          { amount: 0.5, unit: 'lb', item: 'lean ground turkey' },
+          { amount: 0.5, unit: 'cup', item: 'brown rice, cooked' },
+          { amount: 0.25, unit: 'cup', item: 'carrot, shredded' },
+          { amount: 2, unit: 'tbsp', item: 'low-sodium soy sauce' },
+          { amount: 1, unit: 'tsp', item: 'ginger, grated' },
+          { amount: 1, unit: 'clove', item: 'garlic, minced' },
+          { amount: 6, unit: '', item: 'large lettuce leaves' },
+        ],
+        instructions: [
+          'Brown the turkey in a skillet over medium heat, breaking it up as it cooks.',
+          'Stir in the garlic and ginger and cook 1 minute.',
+          'Add the brown rice, carrot and soy sauce; stir until warmed through.',
+          'Spoon the mixture into the lettuce leaves and fold to wrap.',
+        ],
+      },
+      {
+        title: 'Grilled Chicken with Sweet Potato & Asparagus', category: 'dinner', cycle: 2, servings: 2,
+        ingredients: [
+          { amount: 2, unit: '', item: 'boneless skinless chicken breasts' },
+          { amount: 1, unit: '', item: 'medium sweet potato, cubed' },
+          { amount: 1, unit: 'bunch', item: 'asparagus, trimmed' },
+          { amount: 1, unit: 'tbsp', item: 'olive oil' },
+          { amount: 0.5, unit: 'tsp', item: 'smoked paprika' },
+          { amount: null, unit: '', item: 'salt and pepper, to taste' },
+        ],
+        instructions: [
+          'Preheat the oven to 425°F.',
+          'Toss the sweet potato with half the olive oil and the smoked paprika; roast 20 minutes.',
+          'Add the asparagus to the pan and roast 10 more minutes.',
+          'Season the chicken with salt and pepper and grill 6-7 minutes per side.',
+          'Serve the chicken with the roasted vegetables.',
+        ],
+      },
+      {
+        title: 'Greek Yogurt Parfait with Granola', category: 'breakfast', cycle: 3, servings: 1,
+        ingredients: [
+          { amount: 1, unit: 'cup', item: 'plain Greek yogurt' },
+          { amount: 0.33, unit: 'cup', item: 'granola' },
+          { amount: 0.5, unit: 'cup', item: 'strawberries, sliced' },
+          { amount: 1, unit: 'tsp', item: 'honey' },
+        ],
+        instructions: [
+          'Layer half the yogurt in a glass.',
+          'Add half the granola and strawberries.',
+          'Repeat the layers with the rest of the yogurt, granola and strawberries.',
+          'Drizzle with honey and serve.',
+        ],
+      },
+      {
+        title: 'Salmon with Quinoa and Roasted Vegetables', category: 'dinner', cycle: 3, servings: 2,
+        ingredients: [
+          { amount: 2, unit: '', item: 'salmon fillets' },
+          { amount: 0.5, unit: 'cup', item: 'quinoa, uncooked' },
+          { amount: 1, unit: 'cup', item: 'vegetable broth' },
+          { amount: 1, unit: 'cup', item: 'broccoli florets' },
+          { amount: 1, unit: 'cup', item: 'zucchini, sliced' },
+          { amount: 1, unit: 'tbsp', item: 'olive oil' },
+          { amount: 1, unit: '', item: 'lemon, sliced' },
+        ],
+        instructions: [
+          'Simmer the quinoa in the broth, covered, about 15 minutes until tender.',
+          'Toss the broccoli and zucchini with the olive oil and roast at 400°F for 15 minutes.',
+          'Top the salmon with lemon slices and bake alongside the vegetables for the last 12 minutes.',
+          'Serve the salmon over the quinoa with the roasted vegetables.',
+        ],
+      },
+      {
+        title: 'Apple Slices with Almond Butter', category: 'snack', cycle: 3, servings: 1,
+        ingredients: [
+          { amount: 1, unit: '', item: 'apple, sliced' },
+          { amount: 2, unit: 'tbsp', item: 'almond butter' },
+          { amount: 1, unit: 'pinch', item: 'cinnamon' },
+        ],
+        instructions: [
+          'Arrange the apple slices on a plate.',
+          'Serve with the almond butter for dipping.',
+          'Dust with a pinch of cinnamon.',
+        ],
+      },
+      {
+        title: 'Dark Chocolate-Dipped Strawberries', category: 'dessert', cycle: 4, servings: 4,
+        ingredients: [
+          { amount: 1, unit: 'lb', item: 'strawberries' },
+          { amount: 4, unit: 'oz', item: 'dark chocolate (70%+), chopped' },
+          { amount: 1, unit: 'tsp', item: 'coconut oil' },
+        ],
+        instructions: [
+          'Melt the dark chocolate and coconut oil together in short microwave bursts, stirring between each.',
+          'Dip each strawberry halfway into the chocolate.',
+          'Set on parchment paper and refrigerate 15 minutes until set.',
+        ],
+      },
+      {
+        title: 'Hummus with Veggie Sticks', category: 'snack', cycle: 4, servings: 2,
+        ingredients: [
+          { amount: 0.5, unit: 'cup', item: 'hummus' },
+          { amount: 1, unit: '', item: 'carrot, cut into sticks' },
+          { amount: 1, unit: '', item: 'celery stalk, cut into sticks' },
+          { amount: 0.5, unit: '', item: 'bell pepper, cut into strips' },
+        ],
+        instructions: [
+          'Spoon the hummus into a small bowl.',
+          'Arrange the carrot, celery and bell pepper sticks around it for dipping.',
+        ],
+      },
+      {
+        title: 'Herb-Roasted Chicken with Mixed Greens', category: 'dinner', cycle: 4, servings: 2,
+        ingredients: [
+          { amount: 2, unit: '', item: 'bone-in chicken thighs' },
+          { amount: 1, unit: 'tbsp', item: 'olive oil' },
+          { amount: 1, unit: 'tsp', item: 'Italian herb blend' },
+          { amount: 4, unit: 'cups', item: 'mixed greens' },
+          { amount: 1, unit: 'tbsp', item: 'balsamic vinaigrette' },
+        ],
+        instructions: [
+          'Preheat the oven to 400°F.',
+          'Rub the chicken thighs with olive oil and the herb blend.',
+          'Roast 35-40 minutes until the skin is golden and the chicken is cooked through.',
+          'Toss the mixed greens with the balsamic vinaigrette.',
+          'Serve the chicken over the greens.',
+        ],
+      },
+    ];
+
     var state = {
       view: 'list',       // 'list' | 'form' | 'cook'
       recipes: [],
       editingId: null,    // id being edited, or null when adding
       activeId: null,      // recipe open in cook view
       confirmDeleteId: null,
+      collapsed: {},       // category id -> true when its group is collapsed
+      formIngredients: [], // draft ingredient rows while the form is open
       scale: loadScale(),
+      isFullscreen: false,
+      cookServings: 1,      // people to calculate ingredient amounts for, in cook view
       busy: false,
       notes: [],
     };
@@ -229,13 +544,50 @@
       return String(text || '').split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
     }
 
+    // Older saved recipes predate categories/servings/structured ingredients:
+    // a plain ingredient string becomes an item with no amount, a missing
+    // category falls back to dinner, and a missing servings count to 1.
+    function normalizeRecipe(r) {
+      return {
+        id: r.id,
+        title: r.title,
+        category: CATEGORIES.indexOf(r.category) !== -1 ? r.category : 'dinner',
+        servings: (Number.isFinite(r.servings) && r.servings >= 1) ? r.servings : 1,
+        cycle: r.cycle || null,
+        ingredients: Array.isArray(r.ingredients) ? r.ingredients.map(function (ing) {
+          if (typeof ing === 'string') return { amount: null, unit: '', item: ing };
+          return {
+            amount: (typeof ing.amount === 'number' && isFinite(ing.amount)) ? ing.amount : null,
+            unit: String(ing.unit || ''),
+            item: String(ing.item || ''),
+          };
+        }) : [],
+        instructions: Array.isArray(r.instructions) ? r.instructions.slice() : [],
+        updatedAt: r.updatedAt || new Date().toISOString(),
+      };
+    }
+
     function loadRecipes() {
       if (!SDK) {
         note('No plugin storage available -- recipes cannot be saved on this display.');
         return Promise.resolve();
       }
       return SDK.storage.get('recipes').then(function (list) {
-        state.recipes = Array.isArray(list) ? list : [];
+        state.recipes = Array.isArray(list) ? list.map(normalizeRecipe) : [];
+        if (state.recipes.length) return null;
+        return SDK.storage.get('recipes-seeded');
+      }).then(function (seeded) {
+        if (seeded) return null;
+        // Empty box, never seeded before: load the starter set once. A
+        // household that deletes every recipe afterward stays empty --
+        // the flag, not an empty array, is what "already seeded" means.
+        state.recipes = STARTER_RECIPES.map(function (r, i) {
+          return normalizeRecipe(Object.assign({
+            id: 'r' + Date.now() + i + Math.random().toString(36).slice(2, 5),
+            updatedAt: new Date().toISOString(),
+          }, r));
+        });
+        return saveRecipes().then(function () { return SDK.storage.set('recipes-seeded', true); });
       }).catch(function (e) {
         note('Could not load recipes: ' + e.message);
       });
@@ -256,27 +608,47 @@
       state.activeId = null;
       state.confirmDeleteId = null;
       state.notes = [];
+      if (document.fullscreenElement) document.exitFullscreen().catch(function () {});
       render();
     }
+
+    function blankIngredientRow() { return { amount: null, unit: '', item: '' }; }
 
     function goAdd() {
       state.view = 'form';
       state.editingId = null;
+      state.formIngredients = [blankIngredientRow()];
       state.notes = [];
       render();
     }
 
     function goEdit(id) {
+      var r = findRecipe(id);
+      if (!r) return;
       state.view = 'form';
       state.editingId = id;
+      state.formIngredients = r.ingredients.length ? r.ingredients.map(function (i) { return Object.assign({}, i); }) : [blankIngredientRow()];
       state.notes = [];
       render();
     }
 
     function goCook(id) {
+      var r = findRecipe(id);
+      if (!r) return;
       state.view = 'cook';
       state.activeId = id;
+      state.cookServings = r.servings;
       state.notes = [];
+      render();
+    }
+
+    function adjustCookServings(delta) {
+      state.cookServings = Math.max(1, state.cookServings + delta);
+      render();
+    }
+
+    function toggleCategory(cat) {
+      state.collapsed[cat] = !state.collapsed[cat];
       render();
     }
 
@@ -289,18 +661,68 @@
       render();
     }
 
+    var fullscreenSupported = !!(document.documentElement.requestFullscreen);
+    function toggleFullscreen() {
+      if (!fullscreenSupported) return;
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(function () {});
+      } else {
+        document.exitFullscreen().catch(function () {});
+      }
+    }
+    document.addEventListener('fullscreenchange', function () {
+      state.isFullscreen = !!document.fullscreenElement;
+      render();
+    });
+
+    // Reads the ingredient rows currently in the DOM back into
+    // state.formIngredients. Called before every add/remove/submit so typed
+    // values in the rows that stay survive the next render.
+    function syncFormIngredientsFromDom() {
+      var rows = document.querySelectorAll('.ingredient-row');
+      if (!rows.length) return;
+      state.formIngredients = Array.prototype.map.call(rows, function (row) {
+        var amtStr = row.querySelector('.ing-amount').value.trim();
+        return {
+          amount: amtStr === '' ? null : Number(amtStr),
+          unit: row.querySelector('.ing-unit').value.trim(),
+          item: row.querySelector('.ing-item').value.trim(),
+        };
+      });
+    }
+
+    function addIngredientRow() {
+      syncFormIngredientsFromDom();
+      state.formIngredients.push(blankIngredientRow());
+      render();
+    }
+
+    function removeIngredientRow(index) {
+      syncFormIngredientsFromDom();
+      state.formIngredients.splice(index, 1);
+      if (!state.formIngredients.length) state.formIngredients.push(blankIngredientRow());
+      render();
+    }
+
     function submitForm() {
       var title = (document.getElementById('f-title').value || '').trim();
-      var ingredients = linesOf(document.getElementById('f-ingredients').value);
+      var category = document.getElementById('f-category').value;
+      var servings = Number(document.getElementById('f-servings').value);
       var instructions = linesOf(document.getElementById('f-instructions').value);
+      syncFormIngredientsFromDom();
+      var ingredients = state.formIngredients.filter(function (i) { return i.item; });
 
       if (!title) { note('A title is required.'); return; }
-      if (!ingredients.length) { note('Add at least one ingredient, one per line.'); return; }
+      if (CATEGORIES.indexOf(category) === -1) { note('Choose a type for this recipe.'); return; }
+      if (!Number.isFinite(servings) || servings < 1) { note('Servings must be a number of 1 or more.'); return; }
+      if (!ingredients.length) { note('Add at least one ingredient.'); return; }
       if (!instructions.length) { note('Add at least one instruction step, one per line.'); return; }
 
       if (state.editingId) {
         var existing = findRecipe(state.editingId);
         existing.title = title;
+        existing.category = category;
+        existing.servings = servings;
         existing.ingredients = ingredients;
         existing.instructions = instructions;
         existing.updatedAt = new Date().toISOString();
@@ -308,6 +730,9 @@
         state.recipes.push({
           id: 'r' + Date.now() + Math.random().toString(36).slice(2, 7),
           title: title,
+          category: category,
+          servings: servings,
+          cycle: null,
           ingredients: ingredients,
           instructions: instructions,
           updatedAt: new Date().toISOString(),
@@ -334,41 +759,130 @@
       });
     }
 
+    // A clean fraction glyph for a common cooking fraction beats a decimal
+    // (1/2 cup reads better than 0.5 cup); anything else just rounds to 2dp.
+    var FRACTION_GLYPHS = [[0.25, '¼'], [0.333, '⅓'], [0.5, '½'], [0.667, '⅔'], [0.75, '¾']];
+    function formatAmount(n) {
+      var whole = Math.floor(n);
+      var frac = n - whole;
+      for (var i = 0; i < FRACTION_GLYPHS.length; i++) {
+        if (Math.abs(frac - FRACTION_GLYPHS[i][0]) < 0.03) {
+          return (whole > 0 ? whole + ' ' : '') + FRACTION_GLYPHS[i][1];
+        }
+      }
+      var rounded = Math.round(n * 100) / 100;
+      return String(rounded);
+    }
+
+    function ingredientText(ing, multiplier) {
+      var amountPart = '';
+      if (typeof ing.amount === 'number' && isFinite(ing.amount)) {
+        amountPart = formatAmount(ing.amount * (multiplier || 1));
+      }
+      return [amountPart, ing.unit, ing.item].map(function (s) { return String(s || '').trim(); }).filter(Boolean).join(' ');
+    }
+
+    // Sends exactly what cook view is showing right now: the recipe's
+    // ingredients already scaled to state.cookServings, so there is nothing
+    // left to ask -- the servings choice already happened via that stepper.
+    function sendToGroceryList() {
+      var r = findRecipe(state.activeId);
+      if (!r) return;
+      var multiplier = state.cookServings / r.servings;
+      var lines = r.ingredients.map(function (ing) { return ingredientText(ing, multiplier); }).filter(Boolean);
+
+      state.busy = true;
+      render();
+      fetchPluginStorage(GROCERY_LIST_PLUGIN_ID, 'items').then(function (current) {
+        if (!Array.isArray(current)) current = [];
+        var added = mergeIntoGroceryList(current, lines, r.title);
+        return putPluginStorage(GROCERY_LIST_PLUGIN_ID, 'items', current).then(function () { return added; });
+      }).then(function (added) {
+        state.busy = false;
+        note(added > 0
+          ? ('Added ' + added + ' ingredient' + (added === 1 ? '' : 's') + ' from "' + r.title + '" to the grocery list.')
+          : ('Everything from "' + r.title + '" was already on the grocery list.'));
+      }).catch(function (e) {
+        state.busy = false;
+        note('Could not reach the Grocery List widget: ' + e.message);
+      });
+    }
+
+    function renderRecipeRow(r) {
+      if (state.confirmDeleteId === r.id) {
+        return '<div class="confirm-row"><span>Delete &ldquo;' + esc(r.title) + '&rdquo;?</span>' +
+               '<button class="yes" data-delete-yes="' + esc(r.id) + '" type="button">Delete</button>' +
+               '<button class="no" data-delete-no type="button">Cancel</button></div>';
+      }
+      var meta = r.ingredients.length + ' ingr &middot; ' + r.instructions.length + ' steps' +
+        (r.cycle ? ' &middot; Cycle ' + r.cycle : '');
+      return '<div class="recipe-row" data-open="' + esc(r.id) + '">' +
+             '<span class="title">' + esc(r.title) + '</span>' +
+             '<span class="meta">' + meta + '</span>' +
+             '<span class="row-actions">' +
+               '<button data-edit="' + esc(r.id) + '" type="button" aria-label="Edit">&#9998;</button>' +
+               '<button data-delete="' + esc(r.id) + '" type="button" aria-label="Delete">&#128465;</button>' +
+             '</span></div>';
+    }
+
     function renderList() {
       var h = '';
       if (!state.recipes.length) {
         h += '<div class="empty">No recipes yet. Add the first one below.</div>';
       } else {
-        h += '<div class="recipes">';
-        state.recipes.slice().sort(function (a, b) { return a.title.localeCompare(b.title); }).forEach(function (r) {
-          if (state.confirmDeleteId === r.id) {
-            h += '<div class="confirm-row"><span>Delete &ldquo;' + esc(r.title) + '&rdquo;?</span>' +
-                 '<button class="yes" data-delete-yes="' + esc(r.id) + '" type="button">Delete</button>' +
-                 '<button class="no" data-delete-no type="button">Cancel</button></div>';
-            return;
+        CATEGORIES.forEach(function (cat) {
+          var group = state.recipes.filter(function (r) { return r.category === cat; })
+            .sort(function (a, b) { return a.title.localeCompare(b.title); });
+          if (!group.length) return;
+          var collapsed = !!state.collapsed[cat];
+          h += '<div class="category-group">';
+          h += '<button class="category-header" data-toggle-category="' + cat + '" type="button">' +
+               '<span class="chevron">' + (collapsed ? '▸' : '▾') + '</span>' +
+               '<span class="cat-name">' + CATEGORY_LABELS[cat] + '</span>' +
+               '<span class="cat-count">' + group.length + '</span></button>';
+          if (!collapsed) {
+            h += '<div class="recipes">' + group.map(renderRecipeRow).join('') + '</div>';
           }
-          h += '<div class="recipe-row" data-open="' + esc(r.id) + '">' +
-               '<span class="title">' + esc(r.title) + '</span>' +
-               '<span class="meta">' + r.ingredients.length + ' ingr &middot; ' + r.instructions.length + ' steps</span>' +
-               '<span class="row-actions">' +
-                 '<button data-edit="' + esc(r.id) + '" type="button" aria-label="Edit">&#9998;</button>' +
-                 '<button data-delete="' + esc(r.id) + '" type="button" aria-label="Delete">&#128465;</button>' +
-               '</span></div>';
+          h += '</div>';
         });
-        h += '</div>';
       }
       h += '<button class="btn" id="add-recipe" type="button">+ Add Recipe</button>';
       return h;
+    }
+
+    function renderIngredientRow(ing, index) {
+      return '<div class="ingredient-row">' +
+        '<input class="ing-amount" type="number" step="0.25" min="0" placeholder="2" value="' + (ing.amount == null ? '' : esc(ing.amount)) + '">' +
+        '<input class="ing-unit" type="text" list="unit-suggestions" placeholder="cups" value="' + esc(ing.unit) + '">' +
+        '<input class="ing-item" type="text" placeholder="flour" value="' + esc(ing.item) + '">' +
+        '<button class="remove-ingredient" data-remove-ingredient="' + index + '" type="button" aria-label="Remove ingredient">&#10005;</button>' +
+        '</div>';
     }
 
     function renderForm() {
       var editing = state.editingId ? findRecipe(state.editingId) : null;
       var h = '<label class="field"><span>Title</span>' +
               '<input id="f-title" type="text" maxlength="120" value="' + esc(editing ? editing.title : '') + '" placeholder="e.g. Sunday Pancakes"></label>';
-      h += '<label class="field"><span>Ingredients (one per line, with the measurement)</span>' +
-           '<textarea id="f-ingredients" placeholder="2 cups flour&#10;1 tbsp baking powder&#10;1.5 cups milk">' +
-           esc(editing ? editing.ingredients.join('\n') : '') + '</textarea>' +
-           '<div class="hint">Each line shows up as one item on the ingredients side.</div></label>';
+
+      h += '<div class="two-col">';
+      h += '<label class="field"><span>Type</span><select id="f-category">';
+      h += '<option value="" disabled' + (editing ? '' : ' selected') + '>Choose one</option>';
+      CATEGORIES.forEach(function (cat) {
+        h += '<option value="' + cat + '"' + (editing && editing.category === cat ? ' selected' : '') + '>' + CATEGORY_LABELS[cat] + '</option>';
+      });
+      h += '</select></label>';
+      h += '<label class="field"><span>Servings</span>' +
+           '<input id="f-servings" type="number" min="1" step="1" value="' + (editing ? editing.servings : 4) + '">' +
+           '<div class="hint">How many people this feeds as written (1 serving = 1 person).</div></label>';
+      h += '</div>';
+
+      h += '<label class="field"><span>Ingredients</span></label>';
+      h += '<div id="ingredient-rows">' + state.formIngredients.map(renderIngredientRow).join('') + '</div>';
+      h += '<datalist id="unit-suggestions"><option value="cup"><option value="cups"><option value="tbsp"><option value="tsp">' +
+           '<option value="oz"><option value="lb"><option value="g"><option value="clove"><option value="slice">' +
+           '<option value="can"><option value="pinch"><option value="to taste"></datalist>';
+      h += '<button class="add-ingredient" id="add-ingredient" type="button">+ Add ingredient</button>';
+
       h += '<label class="field"><span>Instructions (one step per line)</span>' +
            '<textarea id="f-instructions" placeholder="Whisk the dry ingredients together&#10;Add milk and egg, stir until just combined&#10;Cook 2-3 min per side on a hot griddle">' +
            esc(editing ? editing.instructions.join('\n') : '') + '</textarea>' +
@@ -387,10 +901,15 @@
       var h = '<div class="cook-head">' +
               '<button class="icon-btn" id="cook-back" type="button" aria-label="Back">&larr;</button>' +
               '<h1>' + esc(r.title) + '</h1>' +
-              '<span class="scale-ctrl">' +
+              '<span class="cook-tools">' +
+                '<button class="send-btn" id="cook-send" type="button" ' + (state.busy ? 'disabled' : '') + '>Send to Grocery List</button>' +
+                (fullscreenSupported ? '<button class="icon-btn" id="cook-fullscreen" type="button" aria-label="' +
+                  (state.isFullscreen ? 'Exit fullscreen' : 'Fullscreen') + '">' + (state.isFullscreen ? '&#10005;' : '&#10021;') + '</button>' : '') +
                 '<button class="icon-btn" id="scale-dec" type="button" aria-label="Smaller text">A&minus;</button>' +
                 '<button class="icon-btn" id="scale-inc" type="button" aria-label="Larger text">A+</button>' +
               '</span></div>';
+
+      var multiplier = state.cookServings / r.servings;
 
       h += '<div class="cook-grid" style="--scale:' + state.scale + '">';
       h += '<div class="cook-col"><h2>Instructions</h2><ol class="steps">';
@@ -398,9 +917,14 @@
         h += '<li><span class="num">' + (i + 1) + '</span><span>' + esc(step) + '</span></li>';
       });
       h += '</ol></div>';
-      h += '<div class="cook-col"><h2>Ingredients</h2><ul class="ingredients">';
-      r.ingredients.forEach(function (item) {
-        h += '<li>' + esc(item) + '</li>';
+      h += '<div class="cook-col"><div class="col-head"><h2>Ingredients</h2>' +
+           '<span class="serving-picker">' +
+             '<button class="icon-btn" id="cook-serv-dec" type="button" aria-label="Fewer people">&minus;</button>' +
+             '<span class="count">' + state.cookServings + (state.cookServings === 1 ? ' person' : ' people') + '</span>' +
+             '<button class="icon-btn" id="cook-serv-inc" type="button" aria-label="More people">+</button>' +
+           '</span></div><ul class="ingredients">';
+      r.ingredients.forEach(function (ing) {
+        h += '<li>' + esc(ingredientText(ing, multiplier)) + '</li>';
       });
       h += '</ul></div>';
       h += '</div>';
@@ -409,7 +933,7 @@
 
     function render() {
       document.getElementById('notes').innerHTML = state.notes.map(function (n) {
-        return '<div class="' + (/could not|required|add at least/i.test(n) ? 'err' : 'note') + '">' + esc(n) + '</div>';
+        return '<div class="' + (/could not|required|add at least|choose a type|servings must/i.test(n) ? 'err' : 'note') + '">' + esc(n) + '</div>';
       }).join('');
 
       var view = document.getElementById('view');
@@ -425,6 +949,7 @@
     document.addEventListener('click', function (ev) {
       var el;
       if ((el = ev.target.closest('#add-recipe'))) { goAdd(); return; }
+      if ((el = ev.target.closest('[data-toggle-category]'))) { toggleCategory(el.getAttribute('data-toggle-category')); return; }
       // These three are nested inside a .recipe-row that also carries
       // data-open, so they must be checked before it -- closest() would
       // otherwise walk up past the button and match the row underneath.
@@ -435,7 +960,13 @@
       if ((el = ev.target.closest('[data-open]'))) { goCook(el.getAttribute('data-open')); return; }
       if ((el = ev.target.closest('#form-save'))) { submitForm(); return; }
       if ((el = ev.target.closest('#form-cancel'))) { goList(); return; }
+      if ((el = ev.target.closest('#add-ingredient'))) { addIngredientRow(); return; }
+      if ((el = ev.target.closest('[data-remove-ingredient]'))) { removeIngredientRow(Number(el.getAttribute('data-remove-ingredient'))); return; }
       if ((el = ev.target.closest('#cook-back'))) { goList(); return; }
+      if ((el = ev.target.closest('#cook-fullscreen'))) { toggleFullscreen(); return; }
+      if ((el = ev.target.closest('#cook-send'))) { sendToGroceryList(); return; }
+      if ((el = ev.target.closest('#cook-serv-inc'))) { adjustCookServings(1); return; }
+      if ((el = ev.target.closest('#cook-serv-dec'))) { adjustCookServings(-1); return; }
       if ((el = ev.target.closest('#scale-inc'))) { adjustScale(SCALE_STEP); return; }
       if ((el = ev.target.closest('#scale-dec'))) { adjustScale(-SCALE_STEP); return; }
     });
