@@ -35,15 +35,22 @@
     color: var(--text, #222);
     font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   }
-  .face { position: absolute; inset: 0; container-type: size; container-name: face; display: flex; align-items: center; justify-content: center; padding: 3cqmin; }
-  .card { width: 100%; max-width: 560px; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: clamp(6px, 2cqh, 14px); text-align: center; }
+  .face { position: absolute; inset: 0; container-type: size; container-name: face; display: flex; flex-direction: column; padding: 3cqmin; }
+  .card { width: 100%; max-width: 560px; margin: 0 auto; flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: clamp(6px, 2cqh, 14px); text-align: center; }
+
+  .grade-row {
+    width: 100%; max-width: 560px; margin: 0 auto; display: flex; align-items: center; justify-content: center;
+    gap: 6px; flex: 0 0 auto; padding-bottom: clamp(2px, 1cqh, 8px);
+  }
+  .grade-row label { font-size: clamp(0.5rem, 2cqh, 0.7rem); opacity: 0.7; font-weight: 600; }
+  .grade-row select {
+    font-size: clamp(0.65rem, 2.6cqh, 0.9rem); font-weight: 700; border-radius: var(--hg-radius-sm, 8px);
+    border: 2px solid var(--border, #ccc); background: var(--card-bg, var(--surface)); color: var(--text, #222);
+    padding: clamp(2px, 0.8cqh, 6px) clamp(4px, 1.2cqw, 10px);
+  }
+  .grade-row select:focus { outline: none; border-color: var(--accent, #7c5cff); }
 
   .progress { font-size: clamp(0.55rem, 2.4cqh, 0.8rem); opacity: 0.65; font-weight: 600; letter-spacing: 0.02em; }
-  .grade-badge {
-    display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: clamp(0.5rem, 2cqh, 0.7rem);
-    font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
-    background: rgba(var(--accent-rgb, 124,92,255), 0.14); color: var(--accent, #7c5cff);
-  }
 
   .shape-box { width: clamp(70px, 26cqh, 160px); height: clamp(70px, 26cqh, 160px); margin: 0 auto; }
   .count-row { display: flex; flex-wrap: wrap; gap: 0.3em; justify-content: center; max-width: 90%; font-size: clamp(1.2rem, 7cqh, 2.4rem); line-height: 1; }
@@ -84,7 +91,13 @@
 </style>
 </head>
 <body>
-<div class="face"><div id="view" class="card"></div></div>
+<div class="face">
+  <div class="grade-row">
+    <label for="gradeSelect">Grade</label>
+    <select id="gradeSelect"></select>
+  </div>
+  <div id="view" class="card"></div>
+</div>
 
 <script src="/plugin-sdk/v1.js"></script>
 <script>
@@ -662,8 +675,22 @@
   }
 
   // ---------- round controller ----------
+  var GRADE_LEVELS = ['K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
   var state = { grade: '1', topic: 'mix', size: 10, index: 0, correct: 0, current: null, answered: false, roundUsed: {} };
   var view = document.getElementById('view');
+  var gradeSelect = document.getElementById('gradeSelect');
+
+  function setupGradeSelect() {
+    gradeSelect.innerHTML = GRADE_LEVELS.map(function (g) {
+      return '<option value="' + g + '">' + (g === 'K' ? 'K' : 'Grade ' + g) + '</option>';
+    }).join('');
+    gradeSelect.value = state.grade;
+    gradeSelect.addEventListener('change', function () {
+      state.grade = gradeSelect.value;
+      if (SDK) SDK.settings.set({ grade: state.grade }).catch(function () {});
+      startRound();
+    });
+  }
 
   function generatorsFor(grade, topic) {
     var profile = GRADE_PROFILES[grade] || GRADE_PROFILES['1'];
@@ -688,7 +715,7 @@
 
   function renderProblem() {
     var p = state.current;
-    var html = '<div class="progress">Grade <span class="grade-badge">' + esc(state.grade) + '</span> &middot; Question ' + (state.index + 1) + ' of ' + state.size + '</div>';
+    var html = '<div class="progress">Question ' + (state.index + 1) + ' of ' + state.size + '</div>';
     if (p.html) html += p.html;
     html += '<div class="prompt">' + esc(p.prompt) + '</div>';
     if (p.kind === 'choice') {
@@ -787,14 +814,15 @@
 
   function boot() {
     loadHistory().then(function () {
-      if (!SDK) { startRound(); return; }
+      if (!SDK) { setupGradeSelect(); startRound(); return; }
       return SDK.settings.get().then(function (v) {
         state.grade = (v && v.grade) || '1';
         state.topic = (v && v.topic) || 'mix';
         var size = v && v.roundSize ? parseInt(v.roundSize, 10) : 10;
         state.size = (isFinite(size) && size > 0) ? Math.min(50, size) : 10;
+        setupGradeSelect();
         startRound();
-      }).catch(function () { startRound(); });
+      }).catch(function () { setupGradeSelect(); startRound(); });
     });
   }
 
