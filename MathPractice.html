@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Math Practice</title>
+<script type="application/json" id="homeglow-manifest">
+{
+  "manifestVersion": 1,
+  "id": "math-practice",
+  "name": "Math Practice",
+  "category": "education",
+  "author": "HomeGlow",
+  "description": "Grade-appropriate arithmetic and geometry practice. Problems are generated fresh each round rather than drawn from a fixed bank, so the same question won't repeat for a year under normal use. Pick a grade K-12 per display.",
+  "settings": [
+    { "key": "grade", "label": "Grade level", "type": "select",
+      "options": ["K", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"],
+      "default": "1", "scope": "device",
+      "description": "Sets which problem types and number ranges are used." },
+    { "key": "topic", "label": "Topics", "type": "select",
+      "options": ["mix", "arithmetic", "geometry"], "default": "mix", "scope": "device",
+      "description": "mix: both, picked at random each question. Or lock to just one." },
+    { "key": "roundSize", "label": "Questions per round", "type": "number", "default": 10, "scope": "device" }
+  ],
+  "storage": true
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+<style>
+  :root { color-scheme: light dark; --text: #171717; --surface: #ffffff; --border: #e2e2e2; --success: #1a9850; --hg-error: #d7263d; }
+  [data-theme="dark"] { --text: #ffffff; --surface: #2a2a2a; --border: #3a3a3a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+  body {
+    background: var(--surface, #fff);
+    color: var(--text, #222);
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+  .face { position: absolute; inset: 0; container-type: size; container-name: face; display: flex; align-items: center; justify-content: center; padding: 3cqmin; }
+  .card { width: 100%; max-width: 560px; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: clamp(6px, 2cqh, 14px); text-align: center; }
+
+  .progress { font-size: clamp(0.55rem, 2.4cqh, 0.8rem); opacity: 0.65; font-weight: 600; letter-spacing: 0.02em; }
+  .grade-badge {
+    display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: clamp(0.5rem, 2cqh, 0.7rem);
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    background: rgba(var(--accent-rgb, 124,92,255), 0.14); color: var(--accent, #7c5cff);
+  }
+
+  .shape-box { width: clamp(70px, 26cqh, 160px); height: clamp(70px, 26cqh, 160px); margin: 0 auto; }
+  .count-row { display: flex; flex-wrap: wrap; gap: 0.3em; justify-content: center; max-width: 90%; font-size: clamp(1.2rem, 7cqh, 2.4rem); line-height: 1; }
+
+  .prompt { font-size: clamp(1rem, 6cqh, 2.1rem); font-weight: 700; line-height: 1.3; }
+
+  .answer-row { display: flex; gap: clamp(6px, 1.5cqw, 12px); align-items: center; justify-content: center; flex-wrap: wrap; width: 100%; }
+  .num-input {
+    font-size: clamp(1rem, 5cqh, 1.7rem); font-weight: 700; text-align: center; width: clamp(70px, 24cqw, 140px);
+    padding: clamp(4px, 1.2cqh, 10px); border-radius: var(--hg-radius-md, 10px); border: 2px solid var(--border, #ccc);
+    background: var(--card-bg, var(--surface)); color: var(--text, #222);
+  }
+  .num-input:focus { outline: none; border-color: var(--accent, #7c5cff); }
+
+  .btn {
+    font-size: clamp(0.75rem, 3.4cqh, 1.05rem); font-weight: 700; cursor: pointer; border: none;
+    border-radius: var(--hg-button-radius, 10px); padding: clamp(6px, 1.6cqh, 12px) clamp(12px, 3cqw, 22px);
+    background: var(--hg-button-bg, var(--accent, #7c5cff)); color: var(--hg-button-text, #fff);
+    transition: transform 0.12s ease, filter 0.12s ease;
+  }
+  .btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); filter: brightness(0.96); }
+  .btn.secondary { background: transparent; color: var(--accent, #7c5cff); border: 2px solid var(--accent, #7c5cff); }
+  .btn.choice { background: var(--card-bg, var(--surface)); color: var(--text); border: 2px solid var(--border, #ccc); min-width: clamp(60px, 16cqw, 100px); }
+  .btn.choice.correct { background: var(--success, #1a9850) !important; color: #fff !important; border-color: var(--success, #1a9850) !important; }
+  .btn.choice.wrong { background: var(--hg-error, #d7263d) !important; color: #fff !important; border-color: var(--hg-error, #d7263d) !important; }
+  .choice-grid { display: flex; gap: clamp(6px, 1.5cqw, 12px); flex-wrap: wrap; justify-content: center; }
+
+  .feedback { font-size: clamp(0.75rem, 3cqh, 1.05rem); font-weight: 700; min-height: 1.4em; }
+  .feedback.correct { color: var(--success, #1a9850); }
+  .feedback.wrong { color: var(--hg-error, #d7263d); }
+
+  .summary-title { font-size: clamp(1.1rem, 6cqh, 2rem); font-weight: 800; }
+  .summary-score { font-size: clamp(0.85rem, 4cqh, 1.3rem); opacity: 0.85; }
+  .lifetime { font-size: clamp(0.5rem, 2cqh, 0.7rem); opacity: 0.55; }
+
+  .empty { opacity: 0.6; font-size: clamp(0.6rem, 3cqh, 0.9rem); }
+</style>
+</head>
+<body>
+<div class="face"><div id="view" class="card"></div></div>
+
+<script src="/plugin-sdk/v1.js"></script>
+<script>
+(function () {
+  'use strict';
+  var theme = new URLSearchParams(window.location.search).get('theme');
+  if (theme === 'dark' || theme === 'light') document.documentElement.setAttribute('data-theme', theme);
+
+  var SDK = (typeof HomeGlow !== 'undefined') ? HomeGlow : null;
+  var HISTORY_KEY = 'history';
+  var STATS_KEY = 'stats';
+  var HISTORY_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;
+  var HISTORY_MAX_ENTRIES = 6000;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // ---------- rng / math helpers ----------
+  function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+  function choice(arr) { return arr[randInt(0, arr.length - 1)]; }
+  function shuffle(arr) {
+    var a = arr.slice();
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = randInt(0, i);
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+  function gcd(a, b) {
+    a = Math.abs(a); b = Math.abs(b);
+    while (b) { var t = b; b = a % b; a = t; }
+    return a || 1;
+  }
+  function round2(n) { return Math.round(n * 100) / 100; }
+
+  function parseFractionInput(s) {
+    s = String(s).trim();
+    var m = s.match(/^(-?\d+)\s*\/\s*(\d+)$/);
+    if (m) return [parseInt(m[1], 10), parseInt(m[2], 10)];
+    if (/^-?\d+(\.\d+)?$/.test(s)) return [parseFloat(s), 1];
+    return null;
+  }
+
+  // ---------- shape rendering ----------
+  var SHAPE_SIDES = { triangle: 3, square: 4, pentagon: 5, hexagon: 6, heptagon: 7, octagon: 8 };
+  function polygonPoints(cx, cy, r, sides, rotateDeg) {
+    rotateDeg = rotateDeg === undefined ? -90 : rotateDeg;
+    var pts = [];
+    for (var i = 0; i < sides; i++) {
+      var a = (rotateDeg + i * 360 / sides) * Math.PI / 180;
+      pts.push((cx + r * Math.cos(a)).toFixed(1) + ',' + (cy + r * Math.sin(a)).toFixed(1));
+    }
+    return pts.join(' ');
+  }
+  function shapeSVG(name, opts) {
+    opts = opts || {};
+    var fill = 'var(--accent, #7c5cff)';
+    var open = '<svg viewBox="0 0 120 120" width="100%" height="100%" preserveAspectRatio="xMidYMid meet">';
+    var close = '</svg>';
+    if (name === 'circle') return open + '<circle cx="60" cy="60" r="45" fill="' + fill + '"/>' + close;
+    if (name === 'rectangle') {
+      var w = opts.w || 90, h = opts.h || 50;
+      return open + '<rect x="' + (60 - w / 2) + '" y="' + (60 - h / 2) + '" width="' + w + '" height="' + h + '" fill="' + fill + '"/>' + close;
+    }
+    if (name === 'rhombus') return open + '<polygon points="60,15 100,60 60,105 20,60" fill="' + fill + '"/>' + close;
+    if (name === 'parallelogram') return open + '<polygon points="30,30 100,30 90,90 20,90" fill="' + fill + '"/>' + close;
+    if (name === 'trapezoid') return open + '<polygon points="40,25 80,25 105,95 15,95" fill="' + fill + '"/>' + close;
+    if (name === 'cube') {
+      return open +
+        '<polygon points="25,45 70,45 70,90 25,90" fill="' + fill + '" opacity="0.85"/>' +
+        '<polygon points="25,45 45,25 90,25 70,45" fill="' + fill + '" opacity="0.6"/>' +
+        '<polygon points="70,45 90,25 90,70 70,90" fill="' + fill + '" opacity="0.4"/>' + close;
+    }
+    if (name === 'sphere') return open + '<circle cx="60" cy="60" r="45" fill="' + fill + '"/><ellipse cx="48" cy="42" rx="16" ry="10" fill="#fff" opacity="0.25"/>' + close;
+    if (name === 'cone') return open + '<ellipse cx="60" cy="95" rx="40" ry="12" fill="' + fill + '" opacity="0.55"/><polygon points="60,15 20,95 100,95" fill="' + fill + '"/>' + close;
+    if (name === 'cylinder') return open + '<rect x="20" y="30" width="80" height="55" fill="' + fill + '"/><ellipse cx="60" cy="30" rx="40" ry="12" fill="' + fill + '"/><ellipse cx="60" cy="85" rx="40" ry="12" fill="' + fill + '" opacity="0.7"/>' + close;
+    var sides = SHAPE_SIDES[name];
+    if (sides) return open + '<polygon points="' + polygonPoints(60, 60, 45, sides) + '" fill="' + fill + '"/>' + close;
+    return '';
+  }
+  function shapeBox(name, opts) { return '<div class="shape-box">' + shapeSVG(name, opts) + '</div>'; }
+
+  // ---------- problem builders ----------
+  function numProblem(key, prompt, answer, opts) {
+    opts = opts || {};
+    return { key: key, prompt: prompt, html: opts.html || '', kind: 'number', answer: answer, fraction: !!opts.fraction };
+  }
+  function choiceProblem(key, prompt, answer, choices, opts) {
+    opts = opts || {};
+    return { key: key, prompt: prompt, html: opts.html || '', kind: 'choice', answer: String(answer), choices: shuffle(choices.map(String)) };
+  }
+
+  // ----- K-1: counting, comparing, shapes -----
+  function makeCount(max) {
+    return function () {
+      var n = randInt(3, max);
+      var icon = choice(['⭐', '🍎', '🔵', '🟦', '🐾', '🌸']);
+      var row = '<div class="count-row">' + Array(n).fill('<span>' + icon + '</span>').join('') + '</div>';
+      return numProblem('count|' + n + '|' + icon, 'How many are there?', n, { html: row });
+    };
+  }
+  function makeCompare(max) {
+    return function () {
+      var a = randInt(0, max), b = randInt(0, max);
+      while (b === a) b = randInt(0, max);
+      return choiceProblem('cmp|' + a + '|' + b, 'Which number is bigger?', Math.max(a, b), [a, b]);
+    };
+  }
+  var SHAPE_2D = ['circle', 'square', 'triangle', 'rectangle', 'pentagon', 'hexagon', 'octagon', 'rhombus', 'trapezoid', 'parallelogram'];
+  function makeNameShape(pool) {
+    return function () {
+      var name = choice(pool);
+      var wrongPool = pool.filter(function (s) { return s !== name; });
+      var wrongs = shuffle(wrongPool).slice(0, Math.min(3, wrongPool.length));
+      var drawName = (name === 'rectangle') ? 'rectangle' : name;
+      return choiceProblem('shape|' + name, 'What shape is this?',
+        cap(name), [cap(name)].concat(wrongs.map(cap)),
+        { html: shapeBox(drawName, { w: 85, h: 55 }) });
+    };
+  }
+  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  function makeCountSides(pool) {
+    var withSides = pool.filter(function (s) { return SHAPE_SIDES[s] !== undefined; });
+    return function () {
+      var name = choice(withSides.length ? withSides : ['triangle', 'square', 'pentagon', 'hexagon']);
+      var n = SHAPE_SIDES[name];
+      var choices = [n];
+      while (choices.length < 4) {
+        var c = randInt(Math.max(3, n - 2), n + 3);
+        if (choices.indexOf(c) === -1) choices.push(c);
+      }
+      return choiceProblem('sides|' + name, 'How many sides does a ' + name + ' have?', n, choices, { html: shapeBox(name) });
+    };
+  }
+  var SHAPES_3D = ['cube', 'sphere', 'cone', 'cylinder'];
+  function makeClassify3D() {
+    return function () {
+      var name = choice(SHAPES_3D);
+      var wrongs = shuffle(SHAPES_3D.filter(function (s) { return s !== name; })).slice(0, 3);
+      return choiceProblem('3d|' + name, 'What solid shape is this?', cap(name), [cap(name)].concat(wrongs.map(cap)), { html: shapeBox(name) });
+    };
+  }
+
+  // ----- arithmetic: add/sub/skip-count -----
+  function makeAddSub(opts) {
+    opts = opts || {};
+    var max = opts.max || 20;
+    return function () {
+      var sub = !!opts.sub && Math.random() < 0.5;
+      var a, b, ans, sign;
+      if (sub) {
+        a = randInt(opts.min || 1, max);
+        b = randInt(0, a);
+        ans = a - b; sign = '-';
+      } else {
+        a = randInt(opts.min || 0, max);
+        b = randInt(opts.min || 0, max - a);
+        ans = a + b; sign = '+';
+      }
+      return numProblem('as|' + a + sign + b, a + ' ' + sign + ' ' + b + ' = ?', ans);
+    };
+  }
+  function makeSkipCount(steps, max) {
+    return function () {
+      var step = choice(steps);
+      var start = randInt(0, Math.max(0, max - step * 4));
+      var seq = [start, start + step, start + step * 2, start + step * 3];
+      return numProblem('skip|' + step + '|' + start, 'What comes next? ' + seq.join(', ') + ', __', start + step * 4);
+    };
+  }
+  function makeMultDiv(maxFactor) {
+    return function () {
+      var div = Math.random() < 0.5;
+      var a = randInt(1, maxFactor), b = randInt(1, maxFactor);
+      if (div) {
+        var product = a * b;
+        return numProblem('div|' + product + '/' + a, product + ' ÷ ' + a + ' = ?', b);
+      }
+      return numProblem('mul|' + a + 'x' + b, a + ' × ' + b + ' = ?', a * b);
+    };
+  }
+  function makeMultDigit(d1, d2) {
+    var lo1 = Math.pow(10, d1 - 1), hi1 = Math.pow(10, d1) - 1;
+    var lo2 = Math.pow(10, d2 - 1), hi2 = Math.pow(10, d2) - 1;
+    return function () {
+      var a = randInt(lo1, hi1), b = randInt(lo2, hi2);
+      return numProblem('muld|' + a + 'x' + b, a + ' × ' + b + ' = ?', a * b);
+    };
+  }
+  function makeFactorsMultiples(max) {
+    return function () {
+      var isMultiple = Math.random() < 0.5;
+      var base = randInt(2, 12);
+      if (isMultiple) {
+        var n = randInt(2, Math.floor(max / base));
+        return numProblem('mult|' + base + '|' + n, 'What is the ' + ord(n) + ' multiple of ' + base + '?', base * n);
+      }
+      var product = base * randInt(2, 10);
+      var factorChoices = [base];
+      while (factorChoices.length < 4) {
+        var f = randInt(2, 12);
+        if (factorChoices.indexOf(f) === -1 && product % f !== 0) factorChoices.push(f);
+      }
+      return choiceProblem('fact|' + product + '|' + base, 'Which number is a factor of ' + product + '?', base, factorChoices);
+    };
+  }
+  function ord(n) {
+    var s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  }
+
+  // ----- fractions / decimals / percents / ratios -----
+  function makeFractionAddLike(maxDen) {
+    return function () {
+      var d = randInt(2, maxDen);
+      var n1 = randInt(1, d - 1), n2 = randInt(1, d - n1);
+      var n = n1 + n2, g = gcd(n, d);
+      return numProblem('frac|' + n1 + '/' + d + '+' + n2 + '/' + d, n1 + '/' + d + ' + ' + n2 + '/' + d + ' = ? (simplest form)', (n / g) + '/' + (d / g), { fraction: true });
+    };
+  }
+  function makeFractionIdentify() {
+    return function () {
+      var d = choice([2, 3, 4, 5, 6, 8]);
+      var n = randInt(1, d - 1);
+      var slices = Array(d).fill(0).map(function (_, i) { return i < n; });
+      var html = '<div class="shape-box">' + pieSVG(slices) + '</div>';
+      return numProblem('fracid|' + n + '/' + d, 'What fraction of the circle is shaded?', n + '/' + d, { html: html, fraction: true });
+    };
+  }
+  function pieSVG(slices) {
+    var n = slices.length, cx = 60, cy = 60, r = 45;
+    var parts = '';
+    for (var i = 0; i < n; i++) {
+      var a0 = (-90 + i * 360 / n) * Math.PI / 180;
+      var a1 = (-90 + (i + 1) * 360 / n) * Math.PI / 180;
+      var x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+      var x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+      var large = (360 / n) > 180 ? 1 : 0;
+      var fill = slices[i] ? 'var(--accent, #7c5cff)' : 'none';
+      parts += '<path d="M' + cx + ',' + cy + ' L' + x0.toFixed(1) + ',' + y0.toFixed(1) + ' A' + r + ',' + r + ' 0 ' + large + ',1 ' + x1.toFixed(1) + ',' + y1.toFixed(1) + ' Z" fill="' + fill + '" stroke="var(--border,#ccc)" stroke-width="1.5"/>';
+    }
+    return '<svg viewBox="0 0 120 120" width="100%" height="100%">' + parts + '</svg>';
+  }
+  function makeDecimalAddSub(max) {
+    return function () {
+      var sub = Math.random() < 0.5;
+      var a = round2(randInt(10, max * 100) / 100), b = round2(randInt(10, max * 100) / 100);
+      if (sub && b > a) { var t = a; a = b; b = t; }
+      var ans = round2(sub ? a - b : a + b);
+      return numProblem('dec|' + a + (sub ? '-' : '+') + b, a.toFixed(2) + ' ' + (sub ? '-' : '+') + ' ' + b.toFixed(2) + ' = ?', ans);
+    };
+  }
+  function makePercentOf(max) {
+    return function () {
+      var pct = choice([5, 10, 20, 25, 50, 75]);
+      var base = randInt(4, Math.floor(max / 4)) * 4;
+      return numProblem('pct|' + pct + '%of' + base, 'What is ' + pct + '% of ' + base + '?', round2(base * pct / 100));
+    };
+  }
+  function makeRatio(max) {
+    return function () {
+      var a = randInt(1, max), b = randInt(1, max);
+      var g = gcd(a, b);
+      return numProblem('ratio|' + a + ':' + b, 'Simplify the ratio ' + a + ' : ' + b + ' (e.g. 2/3)', (a / g) + '/' + (b / g), { fraction: true });
+    };
+  }
+  function makeProportion(max) {
+    return function () {
+      var a = randInt(1, max), b = randInt(1, max), k = randInt(2, 6);
+      return numProblem('prop|' + a + '/' + b + '=' + 'x/' + (b * k), a + ' / ' + b + ' = x / ' + (b * k) + '  Find x.', a * k);
+    };
+  }
+  function makeIntegerAddSub(max) {
+    return function () {
+      var a = randInt(-max, max), b = randInt(-max, max);
+      var sub = Math.random() < 0.5;
+      var ans = sub ? a - b : a + b;
+      return numProblem('int|' + a + (sub ? '-' : '+') + b, a + ' ' + (sub ? '-' : '+') + ' (' + b + ') = ?', ans);
+    };
+  }
+  function makeOrderOps() {
+    return function () {
+      var a = randInt(2, 12), b = randInt(2, 12), c = randInt(2, 12);
+      var ans = a + b * c;
+      return numProblem('ooo|' + a + '+' + b + 'x' + c, a + ' + ' + b + ' × ' + c + ' = ?', ans);
+    };
+  }
+
+  // ----- algebra -----
+  function makeLinearEquation(opts) {
+    opts = opts || {};
+    var max = opts.max || 20;
+    return function () {
+      var m = randInt(2, 9), x = randInt(opts.withNeg ? -max : 1, max), b = randInt(-max, max);
+      var total = m * x + b;
+      var sign = b >= 0 ? '+ ' + b : '- ' + Math.abs(b);
+      return numProblem('lin|' + m + 'x' + sign + '=' + total, m + 'x ' + sign + ' = ' + total + '  Find x.', x);
+    };
+  }
+  function makeQuadraticFactorable() {
+    return function () {
+      var r1 = randInt(-9, 9), r2 = randInt(-9, 9);
+      while (r2 === r1) r2 = randInt(-9, 9);
+      var b = -(r1 + r2), c = r1 * r2;
+      var bTerm = b === 0 ? '' : (b > 0 ? ' + ' + b + 'x' : ' - ' + Math.abs(b) + 'x');
+      var cTerm = c === 0 ? '' : (c > 0 ? ' + ' + c : ' - ' + Math.abs(c));
+      var roots = [r1, r2].sort(function (x, y) { return x - y; });
+      return numProblem('quad|' + r1 + ',' + r2, 'x²' + bTerm + cTerm + ' = 0. Give the smaller root.', roots[0]);
+    };
+  }
+  function makeExponents(baseMax, expMax) {
+    return function () {
+      var base = randInt(2, baseMax), exp = randInt(2, expMax);
+      return numProblem('exp|' + base + '^' + exp, base + '^' + exp + ' = ?', Math.pow(base, exp));
+    };
+  }
+  function makeSlope() {
+    return function () {
+      var x1 = randInt(-8, 8), y1 = randInt(-8, 8), x2 = randInt(-8, 8), y2 = randInt(-8, 8);
+      while (x2 === x1) x2 = randInt(-8, 8);
+      var num = y2 - y1, den = x2 - x1, g = gcd(num, den) || 1;
+      num = num / g; den = den / g;
+      if (den < 0) { den = -den; num = -num; }
+      var ans = den === 1 ? String(num) : (num + '/' + den);
+      return numProblem('slope|' + x1 + ',' + y1 + '|' + x2 + ',' + y2, 'Find the slope between (' + x1 + ', ' + y1 + ') and (' + x2 + ', ' + y2 + ').', ans, { fraction: true });
+    };
+  }
+  function makeFunctionEvaluate(opts) {
+    opts = opts || {};
+    return function () {
+      var m = randInt(2, 9), b = randInt(-9, 9), x = randInt(-9, 9);
+      var sign = b >= 0 ? '+ ' + b : '- ' + Math.abs(b);
+      return numProblem('fn|' + m + ',' + b + '|' + x, 'f(x) = ' + m + 'x ' + sign + '.  Find f(' + x + ').', m * x + b);
+    };
+  }
+  var LOG_TABLE = [[2, 2, 4], [2, 3, 8], [2, 4, 16], [2, 5, 32], [3, 2, 9], [3, 3, 27], [4, 2, 16], [5, 2, 25], [10, 2, 100], [10, 3, 1000]];
+  function makeLogarithm() {
+    return function () {
+      var row = choice(LOG_TABLE);
+      return numProblem('log|' + row[0] + '|' + row[2], 'log base ' + row[0] + ' of ' + row[2] + ' = ?', row[1]);
+    };
+  }
+  function makeSequence() {
+    return function () {
+      var geo = Math.random() < 0.5;
+      if (geo) {
+        var r = choice([2, 3]), start = randInt(1, 5);
+        var seq = [start, start * r, start * r * r, start * r * r * r];
+        return numProblem('geo|' + r + '|' + start, 'What comes next? ' + seq.join(', ') + ', __', start * Math.pow(r, 4));
+      }
+      var d = randInt(2, 9), s = randInt(1, 10);
+      var aseq = [s, s + d, s + d * 2, s + d * 3];
+      return numProblem('arith|' + d + '|' + s, 'What comes next? ' + aseq.join(', ') + ', __', s + d * 4);
+    };
+  }
+
+  // ----- geometry -----
+  function makePerimeter(opts) {
+    opts = opts || {};
+    var sides = opts.sides || randInt(opts.minSides || 3, opts.maxSides || 4);
+    return function () {
+      var n = opts.sides || randInt(opts.minSides || 3, opts.maxSides || 4);
+      var lens = [];
+      for (var i = 0; i < n; i++) lens.push(randInt(2, opts.maxSide || 12));
+      var sum = lens.reduce(function (a, b) { return a + b; }, 0);
+      return numProblem('perim|' + lens.join(','), 'A shape has sides ' + lens.join(', ') + '. What is its perimeter?', sum);
+    };
+  }
+  function makeAreaRect(maxW, maxH) {
+    return function () {
+      var w = randInt(2, maxW), h = randInt(2, maxH);
+      return numProblem('arearect|' + w + 'x' + h, 'Find the area of a rectangle with width ' + w + ' and height ' + h + '.', w * h, { html: shapeBox('rectangle', { w: Math.min(100, 30 + w * 4), h: Math.min(100, 20 + h * 4) }) });
+    };
+  }
+  function makeClassifyAngle() {
+    return function () {
+      var deg = randInt(10, 170);
+      while (deg === 90) deg = randInt(10, 170);
+      var label = deg < 90 ? 'Acute' : 'Obtuse';
+      return choiceProblem('angle|' + deg, 'A ' + deg + '° angle is classified as:', label, ['Acute', 'Right', 'Obtuse']);
+    };
+  }
+  function makeAreaTriangle(maxBase, maxHeight) {
+    return function () {
+      var b = randInt(2, maxBase) * 2, h = randInt(2, maxHeight);
+      return numProblem('areatri|' + b + '|' + h, 'Find the area of a triangle with base ' + b + ' and height ' + h + '.', (b * h) / 2, { html: shapeBox('triangle') });
+    };
+  }
+  function makeVolumeRectPrism(max) {
+    return function () {
+      var l = randInt(2, max), w = randInt(2, max), h = randInt(2, max);
+      return numProblem('vol|' + l + 'x' + w + 'x' + h, 'Find the volume of a box with length ' + l + ', width ' + w + ', height ' + h + '.', l * w * h, { html: shapeBox('cube') });
+    };
+  }
+  function makeAreaCircle(maxR) {
+    return function () {
+      var r = randInt(2, maxR);
+      return numProblem('areacirc|' + r, 'Find the area of a circle with radius ' + r + '. Use π ≈ 3.14, round to 2 decimals.', round2(3.14 * r * r), { html: shapeBox('circle') });
+    };
+  }
+  function makeCircumference(maxR) {
+    return function () {
+      var r = randInt(2, maxR);
+      return numProblem('circum|' + r, 'Find the circumference of a circle with radius ' + r + '. Use π ≈ 3.14, round to 2 decimals.', round2(2 * 3.14 * r), { html: shapeBox('circle') });
+    };
+  }
+  function makeAreaParallelogramTrapezoid() {
+    return function () {
+      var trap = Math.random() < 0.5;
+      if (trap) {
+        var a = randInt(2, 12), b = randInt(2, 12), h = randInt(2, 10);
+        return numProblem('trap|' + a + ',' + b + '|' + h, 'Find the area of a trapezoid with parallel sides ' + a + ' and ' + b + ', height ' + h + '.', round2((a + b) / 2 * h), { html: shapeBox('trapezoid') });
+      }
+      var base = randInt(2, 15), height = randInt(2, 12);
+      return numProblem('para|' + base + '|' + height, 'Find the area of a parallelogram with base ' + base + ' and height ' + height + '.', base * height, { html: shapeBox('parallelogram') });
+    };
+  }
+  function makeSurfaceAreaRectPrism(max) {
+    return function () {
+      var l = randInt(2, max), w = randInt(2, max), h = randInt(2, max);
+      var sa = 2 * (l * w + l * h + w * h);
+      return numProblem('surf|' + l + 'x' + w + 'x' + h, 'Find the surface area of a box with length ' + l + ', width ' + w + ', height ' + h + '.', sa, { html: shapeBox('cube') });
+    };
+  }
+  var PYTHAG_TRIPLES = [[3, 4, 5], [6, 8, 10], [5, 12, 13], [8, 15, 17], [9, 12, 15], [7, 24, 25], [20, 21, 29]];
+  function makePythagorean(opts) {
+    opts = opts || {};
+    return function () {
+      var scale = randInt(1, 3);
+      var t = choice(PYTHAG_TRIPLES).map(function (n) { return n * scale; });
+      var findHyp = !opts.findLeg || Math.random() < 0.5;
+      if (findHyp) {
+        return numProblem('pyth|' + t[0] + ',' + t[1], 'A right triangle has legs ' + t[0] + ' and ' + t[1] + '. Find the hypotenuse.', t[2]);
+      }
+      return numProblem('pythleg|' + t[2] + ',' + t[1], 'A right triangle has hypotenuse ' + t[2] + ' and a leg of ' + t[1] + '. Find the other leg.', t[0]);
+    };
+  }
+  function makeDistanceMidpoint(max) {
+    return function () {
+      var mid = Math.random() < 0.5;
+      var x1 = randInt(-max, max), y1 = randInt(-max, max), x2 = randInt(-max, max), y2 = randInt(-max, max);
+      if (mid) {
+        return numProblem('mid|' + x1 + ',' + y1 + '|' + x2 + ',' + y2, 'Find the midpoint x-coordinate of (' + x1 + ', ' + y1 + ') and (' + x2 + ', ' + y2 + ').', round2((x1 + x2) / 2));
+      }
+      var d = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+      return numProblem('dist|' + x1 + ',' + y1 + '|' + x2 + ',' + y2, 'Find the distance between (' + x1 + ', ' + y1 + ') and (' + x2 + ', ' + y2 + '). Round to 2 decimals.', round2(d));
+    };
+  }
+  function makeSimilarTriangleRatio() {
+    return function () {
+      var a = randInt(2, 10), scale = randInt(2, 4);
+      var side = randInt(2, 10);
+      return numProblem('simtri|' + a + '|' + scale + '|' + side, 'Two similar triangles have a scale factor of ' + scale + '. A side of length ' + side + ' on the smaller triangle corresponds to what length on the larger?', side * scale);
+    };
+  }
+  var TRIG_TRIPLES = [[3, 4, 5], [5, 12, 13], [8, 15, 17], [7, 24, 25]];
+  function makeTrigRightTriangle(opts) {
+    opts = opts || {};
+    return function () {
+      var t = choice(TRIG_TRIPLES);
+      var fn = choice(['sin', 'cos', 'tan']);
+      var opp = t[0], adj = t[1], hyp = t[2];
+      var val = fn === 'sin' ? opp / hyp : (fn === 'cos' ? adj / hyp : opp / adj);
+      return numProblem('trig|' + fn + '|' + t.join(','), 'A right triangle has legs ' + opp + ' and ' + adj + ' and hypotenuse ' + hyp + '. Find ' + fn + '(θ), opposite/adjacent as labeled by side ' + opp + '. Round to 2 decimals.', round2(val));
+    };
+  }
+  function makeVolumeCylinderCone(opts) {
+    opts = opts || {};
+    return function () {
+      var cone = Math.random() < 0.5;
+      var r = randInt(2, 10), h = randInt(2, 12);
+      var vol = cone ? (1 / 3) * 3.14 * r * r * h : 3.14 * r * r * h;
+      return numProblem((cone ? 'conevol|' : 'cylvol|') + r + '|' + h, 'Find the volume of a ' + (cone ? 'cone' : 'cylinder') + ' with radius ' + r + ' and height ' + h + '. Use π ≈ 3.14, round to 2 decimals.', round2(vol), { html: shapeBox(cone ? 'cone' : 'cylinder') });
+    };
+  }
+
+  // ---------- grade profiles ----------
+  var GRADE_PROFILES = {
+    'K': {
+      arithmetic: [makeCount(10), makeCompare(10)],
+      geometry: [makeNameShape(['circle', 'square', 'triangle', 'rectangle']), makeCountSides(['triangle', 'square'])]
+    },
+    '1': {
+      arithmetic: [makeAddSub({ max: 20, sub: true }), makeCount(20), makeSkipCount([2, 5, 10], 50)],
+      geometry: [makeNameShape(['circle', 'square', 'triangle', 'rectangle', 'pentagon', 'hexagon']), makeCountSides(['triangle', 'square', 'pentagon', 'hexagon'])]
+    },
+    '2': {
+      arithmetic: [makeAddSub({ max: 100, sub: true }), makeSkipCount([2, 3, 5, 10], 100), makeCompare(1000)],
+      geometry: [makePerimeter({ minSides: 3, maxSides: 4, maxSide: 12 }), makeClassify3D()]
+    },
+    '3': {
+      arithmetic: [makeMultDiv(10), makeAddSub({ max: 1000, sub: true })],
+      geometry: [makeAreaRect(12, 12), makePerimeter({ minSides: 3, maxSides: 6, maxSide: 15 })]
+    },
+    '4': {
+      arithmetic: [makeMultDigit(2, 1), makeFactorsMultiples(50)],
+      geometry: [makeAreaRect(20, 20), makeClassifyAngle()]
+    },
+    '5': {
+      arithmetic: [makeFractionAddLike(12), makeDecimalAddSub(100), makeFractionIdentify()],
+      geometry: [makeAreaTriangle(20, 20), makeVolumeRectPrism(12)]
+    },
+    '6': {
+      arithmetic: [makeRatio(20), makePercentOf(200), makeOrderOps()],
+      geometry: [makeAreaCircle(12), makeAreaParallelogramTrapezoid()]
+    },
+    '7': {
+      arithmetic: [makeProportion(20), makeIntegerAddSub(50)],
+      geometry: [makeCircumference(12), makeSurfaceAreaRectPrism(12)]
+    },
+    '8': {
+      arithmetic: [makeLinearEquation({ max: 20 }), makeExponents(5, 4)],
+      geometry: [makePythagorean({}), makeSlope()]
+    },
+    '9': {
+      arithmetic: [makeLinearEquation({ max: 30, withNeg: true }), makeQuadraticFactorable()],
+      geometry: [makeDistanceMidpoint(15), makePythagorean({ findLeg: true })]
+    },
+    '10': {
+      arithmetic: [makeQuadraticFactorable(), makeFunctionEvaluate()],
+      geometry: [makeTrigRightTriangle(), makeSimilarTriangleRatio()]
+    },
+    '11': {
+      arithmetic: [makeLogarithm(), makeFunctionEvaluate({ harder: true })],
+      geometry: [makeTrigRightTriangle({ harder: true }), makeVolumeCylinderCone()]
+    },
+    '12': {
+      arithmetic: [makeLogarithm(), makeSequence()],
+      geometry: [makeVolumeCylinderCone({ harder: true }), makeTrigRightTriangle({ harder: true })]
+    }
+  };
+
+  // ---------- no-repeat history ----------
+  var usedSet = {};
+  var historyEntries = [];
+  var historyDirty = false;
+
+  function loadHistory() {
+    if (!SDK) return Promise.resolve();
+    return SDK.storage.get(HISTORY_KEY).then(function (entries) {
+      if (!Array.isArray(entries)) entries = [];
+      var cutoff = Date.now() - HISTORY_MAX_AGE_MS;
+      historyEntries = entries.filter(function (e) { return e && e.t >= cutoff; });
+      if (historyEntries.length > HISTORY_MAX_ENTRIES) {
+        historyEntries = historyEntries.slice(historyEntries.length - HISTORY_MAX_ENTRIES);
+      }
+      usedSet = {};
+      historyEntries.forEach(function (e) { usedSet[e.k] = true; });
+    }).catch(function () {});
+  }
+  function recordUsed(key) {
+    usedSet[key] = true;
+    historyEntries.push({ k: key, t: Date.now() });
+    historyDirty = true;
+  }
+  function flushHistory() {
+    if (!SDK || !historyDirty) return;
+    historyDirty = false;
+    SDK.storage.set(HISTORY_KEY, historyEntries).catch(function () {});
+  }
+
+  function pickProblem(generators, roundUsed) {
+    var tries = 0, problem = null;
+    while (tries < 60) {
+      var gen = choice(generators);
+      var candidate = gen();
+      if (!usedSet[candidate.key] && !roundUsed[candidate.key]) { problem = candidate; break; }
+      if (!problem) problem = candidate;
+      tries++;
+    }
+    return problem;
+  }
+
+  // ---------- round controller ----------
+  var state = { grade: '1', topic: 'mix', size: 10, index: 0, correct: 0, current: null, answered: false, roundUsed: {} };
+  var view = document.getElementById('view');
+
+  function generatorsFor(grade, topic) {
+    var profile = GRADE_PROFILES[grade] || GRADE_PROFILES['1'];
+    if (topic === 'arithmetic') return profile.arithmetic;
+    if (topic === 'geometry') return profile.geometry;
+    return profile.arithmetic.concat(profile.geometry);
+  }
+
+  function startRound() {
+    state.index = 0; state.correct = 0; state.answered = false; state.roundUsed = {};
+    nextProblem();
+  }
+
+  function nextProblem() {
+    if (state.index >= state.size) { renderSummary(); return; }
+    var gens = generatorsFor(state.grade, state.topic);
+    state.current = pickProblem(gens, state.roundUsed);
+    state.roundUsed[state.current.key] = true;
+    state.answered = false;
+    renderProblem();
+  }
+
+  function renderProblem() {
+    var p = state.current;
+    var html = '<div class="progress">Grade <span class="grade-badge">' + esc(state.grade) + '</span> &middot; Question ' + (state.index + 1) + ' of ' + state.size + '</div>';
+    if (p.html) html += p.html;
+    html += '<div class="prompt">' + esc(p.prompt) + '</div>';
+    if (p.kind === 'choice') {
+      html += '<div class="choice-grid" id="choices">' + p.choices.map(function (c) {
+        return '<button class="btn choice" data-choice="' + esc(c) + '">' + esc(c) + '</button>';
+      }).join('') + '</div>';
+    } else {
+      html += '<div class="answer-row"><input class="num-input" id="answerInput" type="text" inputmode="' + (p.fraction ? 'text' : 'decimal') + '" autocomplete="off" placeholder="?">' +
+        '<button class="btn" id="checkBtn">Check</button></div>';
+    }
+    html += '<div class="feedback" id="feedback"></div>';
+    view.innerHTML = html;
+
+    if (p.kind === 'choice') {
+      Array.prototype.forEach.call(view.querySelectorAll('[data-choice]'), function (btn) {
+        btn.addEventListener('click', function () { handleChoiceAnswer(btn.getAttribute('data-choice'), btn); });
+      });
+    } else {
+      var input = document.getElementById('answerInput');
+      var checkBtn = document.getElementById('checkBtn');
+      checkBtn.addEventListener('click', function () { handleNumberAnswer(input.value); });
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') handleNumberAnswer(input.value); });
+      input.focus();
+    }
+  }
+
+  function isCorrectNumber(p, raw) {
+    var given = parseFractionInput(raw);
+    if (given === null) return false;
+    var expect = parseFractionInput(String(p.answer));
+    if (expect === null) return false;
+    return Math.abs(given[0] / given[1] - expect[0] / expect[1]) < 0.01;
+  }
+
+  function handleNumberAnswer(raw) {
+    if (state.answered || !raw || !raw.trim()) return;
+    state.answered = true;
+    var ok = isCorrectNumber(state.current, raw);
+    finishAnswer(ok);
+  }
+  function handleChoiceAnswer(value, btn) {
+    if (state.answered) return;
+    state.answered = true;
+    var ok = value === state.current.answer;
+    Array.prototype.forEach.call(view.querySelectorAll('[data-choice]'), function (b) {
+      b.disabled = true;
+      if (b.getAttribute('data-choice') === state.current.answer) b.classList.add('correct');
+      else if (b === btn) b.classList.add('wrong');
+    });
+    finishAnswer(ok, true);
+  }
+
+  function finishAnswer(ok, skipAnswerLine) {
+    recordUsed(state.current.key);
+    if (ok) state.correct++;
+    var fb = document.getElementById('feedback');
+    fb.className = 'feedback ' + (ok ? 'correct' : 'wrong');
+    fb.textContent = ok ? '✓ Correct!' : ('✗ Not quite - answer: ' + state.current.answer);
+    bumpStats(ok);
+    var checkBtn = document.getElementById('checkBtn');
+    if (checkBtn) checkBtn.disabled = true;
+    var input = document.getElementById('answerInput');
+    if (input) input.disabled = true;
+    var nextBtn = document.createElement('button');
+    nextBtn.className = 'btn secondary';
+    nextBtn.style.marginTop = '8px';
+    nextBtn.textContent = (state.index + 1 >= state.size) ? 'See results' : 'Next';
+    nextBtn.addEventListener('click', function () { state.index++; nextProblem(); });
+    view.appendChild(nextBtn);
+    flushHistory();
+  }
+
+  function bumpStats(ok) {
+    if (!SDK) return;
+    SDK.storage.increment(STATS_KEY, 'answered', 1).catch(function () {});
+    if (ok) SDK.storage.increment(STATS_KEY, 'correct', 1).catch(function () {});
+  }
+
+  function renderSummary() {
+    var pct = state.size ? Math.round((state.correct / state.size) * 100) : 0;
+    var html = '<div class="summary-title">Round complete!</div>' +
+      '<div class="summary-score">' + state.correct + ' / ' + state.size + ' correct (' + pct + '%)</div>' +
+      '<button class="btn" id="again">Play again</button>' +
+      '<div class="lifetime" id="lifetime"></div>';
+    view.innerHTML = html;
+    document.getElementById('again').addEventListener('click', startRound);
+    if (SDK) {
+      SDK.storage.get(STATS_KEY).then(function (stats) {
+        if (!stats || !stats.answered) return;
+        var lp = Math.round((stats.correct || 0) / stats.answered * 100);
+        var el = document.getElementById('lifetime');
+        if (el) el.textContent = 'Lifetime: ' + lp + '% correct over ' + stats.answered + ' questions';
+      }).catch(function () {});
+    }
+  }
+
+  function boot() {
+    loadHistory().then(function () {
+      if (!SDK) { startRound(); return; }
+      return SDK.settings.get().then(function (v) {
+        state.grade = (v && v.grade) || '1';
+        state.topic = (v && v.topic) || 'mix';
+        var size = v && v.roundSize ? parseInt(v.roundSize, 10) : 10;
+        state.size = (isFinite(size) && size > 0) ? Math.min(50, size) : 10;
+        startRound();
+      }).catch(function () { startRound(); });
+    });
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
